@@ -17,6 +17,15 @@
   "A table associating the HTML tag name (e.g., \"a\") with the corresponding
   nyxt/dom class.")
 
+(define-class element (plump:element)
+  ((in-shadow-p nil
+                :documentation "Whether the element is a part of the Shadow tree."))
+  (:export-class-name-p t)
+  (:export-accessor-names-p t)
+  (:export-predicate-name-p t)
+  (:accessor-name-transformer (class*:make-name-transformer name))
+  (:documentation "A custom DOM element to add the shadow flagging to `plump:element'."))
+
 (defmacro define-element-classes (&body names)
   (loop for name in names
         collect (let* ((class-name (if (listp name) (first name) name))
@@ -25,7 +34,7 @@
                   `(progn
                      (define-class ,class-name (,@(if additional-superclasses
                                                       additional-superclasses
-                                                      '(plump:element)))
+                                                      '(element)))
                        ()
                        (:export-class-name-p t)
                        (:export-accessor-names-p t)
@@ -88,9 +97,10 @@
   (wbr-element text-element))
 
 (defmethod name-dom-elements ((node plump:node))
-  (alex:when-let* ((tag-p (plump:element-p node))
-                   (class (gethash (plump:tag-name node) *nyxt-dom-classes*)))
-    (change-class node class))
+  (when (plump:element-p node)
+    (alex:if-let ((class (gethash (plump:tag-name node) *nyxt-dom-classes*)))
+      (change-class node class)
+      (change-class node 'element)))
   (when (plump:nesting-node-p node)
     (loop for child across (plump:children node)
           do (name-dom-elements child)))
@@ -103,8 +113,9 @@
   (name-dom-elements (plump:parse input)))
 
 (define-parenscript get-document-body-json ()
-  (defun process-element (element)
-    (let ((object (ps:create :name (ps:@ element node-name)))
+  (defun process-element (element shadowed)
+    (let ((object (ps:create :name (ps:@ element node-name)
+                             :shadowed shadowed))
           (attributes (ps:chain element attributes)))
       (unless (or (ps:undefined attributes)
                   (= 0 (ps:@ attributes length)))
@@ -113,16 +124,22 @@
               do (setf (ps:@ object :attributes (ps:chain attributes (item i) name))
                        (ps:chain attributes (item i) value))))
       (unless (or (ps:undefined (ps:chain element child-nodes))
-                  (= 0 (ps:chain element child-nodes length)))
+                  (= 0 (ps:@ element child-nodes length)))
         (setf (ps:chain object :children)
-              (loop for child in (ps:chain element child-nodes)
-                    collect (process-element child))))
+              (loop for child in (ps:@ element child-nodes)
+                    collect (process-element child shadowed))))
+      (when (and (ps:chain element shadow-root)
+                 (/= 0 (ps:@ element shadow-root child-nodes length)))
+        (setf (ps:chain object :children)
+              (append (or (ps:chain object :children) (make-array))
+                      (loop for child in (ps:@ element shadow-root child-nodes)
+                            collect (process-element child t)))))
       (when (or (equal (ps:@ element node-name) "#text")
                 (equal (ps:@ element node-name) "#comment")
                 (equal (ps:@ element node-name) "#cdata-section"))
         (setf (ps:@ object :text) (ps:@ element text-content)))
       object))
-  (ps:chain -j-s-o-n (stringify (process-element (nyxt/ps:qs document "html")))))
+  (ps:chain -j-s-o-n (stringify (process-element (nyxt/ps:qs document "html") nil))))
 
 (export-always 'named-json-parse)
 (-> named-json-parse (string) (values (or plump-dom:root null) &optional))

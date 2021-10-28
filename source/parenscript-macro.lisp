@@ -59,3 +59,24 @@
               (<= (chain rect right) (chain window inner-width))
               (<= (chain rect bottom) (chain window inner-height)))
          t nil)))
+
+(export-always 'all-shadow-roots)
+(defpsmacro all-shadow-roots ()
+  `(let ((%all-shadow-roots
+           (lambda (element)
+             (when (ps:undefined (ps:@ window shadow-roots))
+               (setf (ps:@ window shadow-roots) (array)))
+             (dolist (elem (nyxt/ps:qsa element "*"))
+               (let* ((shadow (ps:@ elem shadow-root)))
+                 (when (and shadow
+                            (not (ps:chain window shadow-roots (includes shadow))))
+                   (setf (ps:@ window shadow-roots)
+                         (append (list shadow) (ps:@ window shadow-roots)))
+                   (%all-shadow-roots shadow))))
+             (ps:@ window shadow-roots))))
+     (%all-shadow-roots document)))
+
+(defpsmacro document-and-shadow-roots ()
+  `(let ((roots (all-shadow-roots)))
+     (append (array document) roots)
+     roots))
