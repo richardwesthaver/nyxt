@@ -285,26 +285,24 @@ prevents otherwise.")
    (handler-bind ((error (lambda (c) (log:error "In *after-init-hook*: ~a" c))))
      (hooks:run-hook *after-init-hook*))) ; TODO: Run outside the main loop?
   ;; `startup' must be run _after_ this function returns;
-  ;; `ffi-within-renderer-thread' runs its body on the renderer thread when it's
+  ;; `with-renderer-thread' runs its body on the renderer thread when it's
   ;; idle, so it should do the job.  It's not enough since the
   ;; `startup' may invoke the prompt buffer, which cannot be invoked from
   ;; the renderer thread: this is why we run the `startup' in a new
   ;; thread from there.
-  (ffi-within-renderer-thread
-   browser
-   (lambda ()
-     (run-thread "finalization"
-       ;; Restart on init error, in case `*config-file*' broke the state.
-       ;; We only `handler-case' when there is an init file, this way we avoid
-       ;; looping indefinitely.
-       (let ((restart-on-error? (not (or (getf *options* :no-config)
-                                         (getf *options* :no-init) ; TODO: Deprecated, remove in 4.0.
-                                         (not (uiop:file-exists-p (files:expand *config-file*)))))))
-         ;; Set `*restart-on-error*' globally instead of let-binding it so
-         ;; that it visible from all threads.
-         (unwind-protect (progn (setf *restart-on-error* restart-on-error?)
-                                (startup browser urls))
-           (setf *restart-on-error* nil))))))
+  (with-renderer-thread "finalization"
+    (run-thread "finalization"
+      ;; Restart on init error, in case `*config-file*' broke the state.
+      ;; We only `handler-case' when there is an init file, this way we avoid
+      ;; looping indefinitely.
+      (let ((restart-on-error? (not (or (getf *options* :no-config)
+                                        (getf *options* :no-init) ; TODO: Deprecated, remove in 4.0.
+                                        (not (uiop:file-exists-p (files:expand *config-file*)))))))
+        ;; Set `*restart-on-error*' globally instead of let-binding it so
+        ;; that it visible from all threads.
+        (unwind-protect (progn (setf *restart-on-error* restart-on-error?)
+                               (startup browser urls))
+          (setf *restart-on-error* nil)))))
   ;; Set `init-time' at the end of finalize to take the complete startup time
   ;; into account.
   (setf (slot-value *browser* 'init-time)

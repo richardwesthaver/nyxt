@@ -53,6 +53,7 @@ raised condition."
 
 (defun make-channel (&optional size)
   "Return a channel of capacity SIZE.
+If SIZE is 0, channel is always blocking.
 If SIZE is NIL, capacity is infinite."
   (cond
     ((null size)
@@ -78,42 +79,138 @@ This is a blocking operation."
     (cons (calispel:? channel)
           (nreverse (fetch)))))
 
-(export-always 'run-thread)
-(defmacro run-thread (name &body body)
-  "Run body in a new protected thread.
+(defun wrap-thunk-for-thread (thunk channel error-channel)
+  (lambda ()
+    (if (or *run-from-repl-p* *restart-on-error*)
+        (let ((current-condition nil))
+          (restart-case
+              (handler-bind ((condition (lambda (c) (setf current-condition c))))
+                (calispel:! channel (funcall thunk)))
+            (abort-ffi-method ()
+              :report "Pass condition to calling thread."
+              (calispel:! error-channel current-condition))))
+        (handler-case (calispel:! channel (funcall thunk))
+          (condition (c)
+            (calispel:! error-channel c))))))
+
+(defun wait-for-thread (thread channel error-channel)
+  (calispel:fair-alt
+    ((calispel:? channel result)
+     result)
+    ((calispel:? error-channel condition)
+     (with-protect ("Error in thread ~a: ~a" (bt:thread-name thread) :condition)
+       (error condition)))))
+
+(defun call-with-thread (name thunk)
+  "See also `with-thread-async' and `call-with-thread-wait'."
+  ;; TODO: Explain why we rely on 2 channels, instead of using bt:join-thread to
+  ;; get the thread value.  It's because we need `calispel:fair-alt'.  With
+  ;; `bt:join-thread' alone we cannot get the condition.  Returning the
+  ;; condition is not an option, otherwise how do we tell the difference between
+  ;; a raised condition and the instance of a condition returned like any value?
+  ;; BUT! Do we need to know the condition of the failed thread?
+  ;; Maybe not, seems that we are not using it at all when *run-from-repl-p* is nil.
+  (let ((channel (make-channel 1))
+        (error-channel (make-channel 1)))
+    (values
+     (bt:make-thread
+      (wrap-thunk-for-thread thunk channel error-channel)
+      :name (str:concat "Nyxt " name))
+     channel
+     error-channel)))
+
+(defun call-with-thread-wait (name thunk)
+  "See also `call-with-thread' and `with-thread'."
+  (multiple-value-call #'wait-for-thread
+    (call-with-thread name thunk)))
+
+(export-always 'with-thread)
+(defmacro with-thread (name &body body)
+  "Run BODY in a new protected thread.
+Return 3 values:
+- The newly thread.
+- A result channel.
+- An error channel.
+
+Example:
+
+\(multiple-value-match (with-thread \"My thread\" BODY)
+  ((thread channel error-channel)
+   (calispel:fair-alt
+     ((calispel:? channel result)
+      result)
+     ((calispel:? error-channel condition)
+      (with-protect (\"Error in ~a: ~a\" (bt:thread-name thread) :condition)
+        (error condition))))))
+
 This supersedes `bt:make-thread' in Nyxt.  Don't use the latter unless you know
 what you are doing!"
-  `(bt:make-thread
-    (lambda ()
-      (with-protect ("Error on separate thread: ~a" :condition)
-        ,@body))
-    :name (str:concat "Nyxt " ,name)))
+  (sera:with-thunk (body)
+    `(call-with-thread ,name ,body)))
 
-(defun evaluate (string &key interactive-p)
+(export-always 'with-thread-wait)
+(defmacro with-thread-wait (name &body body)
+  "Run BODY in a new protected thread and block until it can return the result."
+  (sera:with-thunk (body)
+    `(call-with-thread-wait ,name ,body)))
+
+(defun call-with-renderer-thread-maybe-wait (name thunk) ; TODO: Poorly named, it's not blocking!
+  "Like `call-with-thread' but run THUNK from the GTK loop.
+If already on the loop, return result of THUNK.
+If not on the loop, return 3 values, as in `call-with-thread'."
+  (if (renderer-thread-p)
+      (funcall thunk)
+      (let ((channel (make-channel 1))
+            (error-channel (make-channel 1)))
+        (values
+         (ffi-with-renderer-thread
+          (wrap-thunk-for-thread thunk channel error-channel))
+         channel
+         error-channel))))
+
+(defun call-with-renderer-thread-wait (name thunk)
+  "See also `call-with-renderer-thread-maybe-wait'."
+  (if (renderer-thread-p)
+      (funcall thunk)
+      ;; TODO: Override `wait-for-thread' message with "Error in FFI method: ~a".
+      (multiple-value-call #'wait-for-thread
+        (call-with-renderer-thread-maybe-wait name thunk))))
+
+(defmacro with-renderer-thread-maybe-wait (name &body body)
+  ""
+  (sera:with-thunk (body)
+    `(call-with-renderer-thread-maybe-wait ,name ,body)))
+
+(defmacro with-renderer-thread-wait (name &body body)
+  ""
+  (sera:with-thunk (body)
+    `(call-with-renderer-thread-wait ,name ,body)))
+
+(export-always 'run-thread)
+(defmacro run-thread (name &body body)  ; TODO: Deprecate!  Or use previous definitions for those who do not care about the channels?
+  "Obsoleted by `with-thread'."
+  `(with-thread ,name ,@body))
+
+(defun evaluate-wait (string &key interactive-p)
   "Evaluate all expressions in STRING and return the last result as a list of values.
 The list of values is useful when the last result is multi-valued, e.g. (values 'a 'b).
 You need not wrap multiple values in a PROGN, all top-level expressions are
 evaluated in order."
-  (let ((channel (make-channel 1)))
-    (run-thread "evaluator"
-      (let ((interactive-p interactive-p))
-        (calispel:!
-         channel
-         (with-input-from-string (input string)
-           (first
-            (last
-             (loop for object = (read input nil :eof)
-                   until (eq object :eof)
-                   collect (multiple-value-list
-                            (handler-case (let ((*interactive-p* interactive-p))
-                                            (eval object))
-                              (error (c) (format nil "~a" c)))))))))))
-    (calispel:? channel)))
+  (multiple-value-call #'wait-for-thread
+    (evaluate string :interactive-p interactive-p)))
 
-(defun evaluate-async (string)
-  "Like `evaluate' but does not block and does not return the result."
-  (run-thread "async evaluator"
-    (with-input-from-string (input string)
-      (loop for object = (read input nil :eof)
-            until (eq object :eof)
-            collect (funcall (lambda () (eval object)))))))
+(setf (fdefinition 'evaluate) #'evaluate-wait) ; TODO: Mark as obsolete.
+
+(defun evaluate (string &key interactive-p)
+  "Like `evaluate' but does not block."
+  (with-thread "evaluator"
+    (let ((interactive-p interactive-p))
+      (with-input-from-string (input string)
+        (first
+         (last
+          (loop for object = (read input nil :eof)
+                until (eq object :eof)
+                collect (multiple-value-list
+                         (handler-case (let ((*interactive-p* interactive-p))
+                                         (eval object))
+                           (error (c) (format nil "~a" c)))))))))))

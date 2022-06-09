@@ -355,16 +355,14 @@ With MODE-SYMBOLS and GLOBAL-P, include global commands."
 (defun run (command &optional args)
   "Run COMMAND over ARGS and return its result.
 This is blocking, see `run-async' for an asynchronous way to run commands."
-  (let ((channel (make-channel 1)))
-    (run-thread "run command"
-      (calispel:! channel (run-command command args)))
-    (calispel:? channel)))
+  (with-thread "run command"
+    (run-command command args)))
 
 (defun run-async (command &optional args)
   "Run COMMAND over ARGS asynchronously.
 See `run' for a way to run commands in a synchronous fashion and return the
 result."
-  (run-thread "run-async command"
+  (with-thread-async "run command"
     (run-command command args)))
 
 (define-command forward-to-renderer (&key (window (current-window))

@@ -160,40 +160,17 @@ As a workaround, we never leave the GTK main loop when running from a REPL.
 
 See https://github.com/atlas-engineer/nyxt/issues/740")
 
-(defun renderer-thread-p ()
+(defun renderer-thread-p ()             ; TODO: Move to FFI?
   #+darwin
   (string= "main thread" (bt:thread-name (bt:current-thread)))
   #-darwin
   (string= "cl-cffi-gtk main thread" (bt:thread-name (bt:current-thread))))
 
-(defmacro within-gtk-thread (&body body)
-  "Protected `gtk:within-gtk-thread'."
-  `(gtk:within-gtk-thread
-     (with-protect ("Error on GTK thread: ~a" :condition)
-       ,@body)))
-
-(defmethod ffi-within-renderer-thread ((browser gtk-browser) thunk)
+(defmethod ffi-with-renderer-thread ((browser gtk-browser) thunk) ; TODO: Rename?
   (declare (ignore browser))
-  (within-gtk-thread
-    (funcall thunk)))
-
-(defun %within-renderer-thread (thunk)
-  "If the current thread is the renderer thread, execute THUNK with `funcall'.
-Otherwise run the THUNK on the renderer thread by passing it a channel and wait on the channel's result."
-  (if (renderer-thread-p)
-      (funcall thunk)
-      (let ((channel (make-channel 1)))
-        (within-gtk-thread
-          (funcall thunk channel))
-        (calispel:? channel))))
-
-(defun %within-renderer-thread-async (thunk)
-  "Same as `%within-renderer-thread' but THUNK is not blocking and does
-not return."
-  (if (renderer-thread-p)
-      (funcall thunk)
-      (within-gtk-thread
-        (funcall thunk))))
+  ;; From cl-cffi-gtk's `within-gtk-thread':
+  (gdk:gdk-threads-add-idle ; Could probably be replaced by glib:g-idle-add, but this is safer (see GDK Threads doc)
+   thunk))
 
 (defmacro define-ffi-method (name args &body body)
   "Define an FFI method to run in the renderer thread.
@@ -208,31 +185,34 @@ the renderer thread, use `defmethod' instead."
     `(defmethod ,name ,args
        ,@(sera:unsplice docstring)
        ,@declares
-       (if (renderer-thread-p)
-           (progn ,@forms)
-           (let ((channel (make-channel 1))
-                 (error-channel (make-channel 1)))
-             (within-gtk-thread
-               ;; We do not include `*debug-on-error*' for now, since we need to
-               ;; first improve the debugger to properly handle the GTK thread.
-               ;; TODO: Abstract this into `with-protect-from-thread'?
-               (if (or *run-from-repl-p* *restart-on-error*)
-                   (let ((current-condition nil))
-                     (restart-case
-                         (handler-bind ((condition (lambda (c) (setf current-condition c))))
-                           (calispel:! channel (progn ,@forms)))
-                       (abort-ffi-method ()
-                         :report "Pass condition to calling thread."
-                         (calispel:! error-channel current-condition))))
-                   (handler-case (calispel:! channel (progn ,@forms))
-                     (condition (c)
-                       (calispel:! error-channel c)))))
-             (calispel:fair-alt
-               ((calispel:? channel result)
-                result)
-               ((calispel:? error-channel condition)
-                (with-protect ("Error in FFI method: ~a" :condition)
-                  (error condition)))))))))
+       (with-renderer-thread-wait
+         ,@body)
+       ;; (if (renderer-thread-p)
+       ;;     (progn ,@forms)
+       ;;     (let ((channel (make-channel 1))
+       ;;           (error-channel (make-channel 1)))
+       ;;       (within-gtk-thread
+       ;;         ;; We do not include `*debug-on-error*' for now, since we need to
+       ;;         ;; first improve the debugger to properly handle the GTK thread.
+       ;;         ;; TODO: Abstract this into `with-protect-from-thread'?
+       ;;         (if (or *run-from-repl-p* *restart-on-error*)
+       ;;             (let ((current-condition nil))
+       ;;               (restart-case
+       ;;                   (handler-bind ((condition (lambda (c) (setf current-condition c))))
+       ;;                     (calispel:! channel (progn ,@forms)))
+       ;;                 (abort-ffi-method ()
+       ;;                   :report "Pass condition to calling thread."
+       ;;                   (calispel:! error-channel current-condition))))
+       ;;             (handler-case (calispel:! channel (progn ,@forms))
+       ;;               (condition (c)
+       ;;                 (calispel:! error-channel c)))))
+       ;;       (calispel:fair-alt
+       ;;         ((calispel:? channel result)
+       ;;          result)
+       ;;         ((calispel:? error-channel condition)
+       ;;          (with-protect ("Error in FFI method: ~a" :condition)
+       ;;            (error condition))))))
+       )))
 
 (defmethod ffi-initialize ((browser gtk-browser) urls startup-timestamp)
   "gtk:within-main-loop handles all the GTK initialization. On
@@ -244,7 +224,7 @@ the renderer thread, use `defmethod' instead."
   (log:debug "Initializing GTK Interface")
   (setf (uiop:getenv "WEBKIT_FORCE_SANDBOX") "0")
   (if gtk-running-p
-      (within-gtk-thread
+      (with-renderer-thread
         (finalize browser urls startup-timestamp))
       #-darwin
       (progn
@@ -415,107 +395,105 @@ response.  The BODY is wrapped with `with-protect'."
        (push handler-id (handler-ids ,object)))))
 
 (defmethod customize-instance :after ((buffer status-buffer) &key)
-  (%within-renderer-thread-async
-   (lambda ()
-     (with-slots (gtk-object) buffer
-       (unless gtk-object
-         (setf gtk-object (make-web-view (profile buffer) buffer))
-         (connect-signal-function
-          buffer "decide-policy"
-          (make-decide-policy-handler buffer)))))))
+  (with-renderer-thread
+   (with-slots (gtk-object) buffer
+     (unless gtk-object
+       (setf gtk-object (make-web-view (profile buffer) buffer))
+       (connect-signal-function
+        buffer "decide-policy"
+        (make-decide-policy-handler buffer))))))
 
 (defmethod customize-instance :after ((window gtk-window) &key)
-  (%within-renderer-thread-async
-   (lambda ()
-     (with-slots (gtk-object root-box-layout horizontal-box-layout
-                  panel-buffer-container-left
-                  panel-buffer-container-right
-                  main-buffer-container
-                  active-buffer prompt-buffer-container
-                  prompt-buffer-view
-                  status-buffer status-container
-                  message-container message-view
-                  key-string-buffer) window
-       (unless gtk-object
-         (setf gtk-object (make-instance 'gtk:gtk-window
-                                         :type :toplevel
-                                         :default-width 1024
-                                         :default-height 768))
-         (setf root-box-layout (make-instance 'gtk:gtk-box
-                                              :orientation :vertical
-                                              :spacing 0))
-         (setf horizontal-box-layout (make-instance 'gtk:gtk-box
-                                                    :orientation :horizontal
-                                                    :spacing 0))
-         (setf panel-buffer-container-left (make-instance 'gtk:gtk-box
-                                                          :orientation :horizontal
-                                                          :spacing 0))
-         (setf panel-buffer-container-right (make-instance 'gtk:gtk-box
-                                                           :orientation :horizontal
-                                                           :spacing 0))
-         (setf main-buffer-container (make-instance 'gtk:gtk-box
+  (with-renderer-thread
+   (with-slots (gtk-object root-box-layout horizontal-box-layout
+                panel-buffer-container-left
+                panel-buffer-container-right
+                main-buffer-container
+                active-buffer prompt-buffer-container
+                prompt-buffer-view
+                status-buffer status-container
+                message-container message-view
+                key-string-buffer) window
+     (unless gtk-object
+       (setf gtk-object (make-instance 'gtk:gtk-window
+                                       :type :toplevel
+                                       :default-width 1024
+                                       :default-height 768))
+       (setf root-box-layout (make-instance 'gtk:gtk-box
+                                            :orientation :vertical
+                                            :spacing 0))
+       (setf horizontal-box-layout (make-instance 'gtk:gtk-box
+                                                  :orientation :horizontal
+                                                  :spacing 0))
+       (setf panel-buffer-container-left (make-instance 'gtk:gtk-box
+                                                        :orientation :horizontal
+                                                        :spacing 0))
+       (setf panel-buffer-container-right (make-instance 'gtk:gtk-box
+                                                         :orientation :horizontal
+                                                         :spacing 0))
+       (setf main-buffer-container (make-instance 'gtk:gtk-box
+                                                  :orientation :vertical
+                                                  :spacing 0))
+       (setf prompt-buffer-container (make-instance 'gtk:gtk-box
                                                     :orientation :vertical
                                                     :spacing 0))
-         (setf prompt-buffer-container (make-instance 'gtk:gtk-box
-                                                      :orientation :vertical
-                                                      :spacing 0))
-         (setf message-container (make-instance 'gtk:gtk-box
-                                                :orientation :vertical
-                                                :spacing 0))
-         (setf status-container (make-instance 'gtk:gtk-box
-                                               :orientation :vertical
-                                               :spacing 0))
-         (setf key-string-buffer (make-instance 'gtk:gtk-entry))
-         (setf active-buffer (make-instance 'buffer))
+       (setf message-container (make-instance 'gtk:gtk-box
+                                              :orientation :vertical
+                                              :spacing 0))
+       (setf status-container (make-instance 'gtk:gtk-box
+                                             :orientation :vertical
+                                             :spacing 0))
+       (setf key-string-buffer (make-instance 'gtk:gtk-entry))
+       (setf active-buffer (make-instance 'buffer))
 
-         ;; Add the views to the box layout and to the window
-         (gtk:gtk-box-pack-start main-buffer-container (gtk-object active-buffer) :expand t :fill t)
-         (gtk:gtk-box-pack-start horizontal-box-layout panel-buffer-container-left :expand nil)
-         (gtk:gtk-box-pack-start horizontal-box-layout main-buffer-container :expand t :fill t)
-         (gtk:gtk-box-pack-start horizontal-box-layout panel-buffer-container-right :expand nil)
-         (gtk:gtk-box-pack-start root-box-layout horizontal-box-layout :expand t :fill t)
+       ;; Add the views to the box layout and to the window
+       (gtk:gtk-box-pack-start main-buffer-container (gtk-object active-buffer) :expand t :fill t)
+       (gtk:gtk-box-pack-start horizontal-box-layout panel-buffer-container-left :expand nil)
+       (gtk:gtk-box-pack-start horizontal-box-layout main-buffer-container :expand t :fill t)
+       (gtk:gtk-box-pack-start horizontal-box-layout panel-buffer-container-right :expand nil)
+       (gtk:gtk-box-pack-start root-box-layout horizontal-box-layout :expand t :fill t)
 
-         (setf message-view (make-web-view *global-profile* nil))
-         (gtk:gtk-box-pack-end root-box-layout message-container :expand nil)
-         (gtk:gtk-box-pack-start message-container message-view :expand t)
-         (setf (gtk:gtk-widget-size-request message-container)
-               (list -1 (message-buffer-height window)))
+       (setf message-view (make-web-view *global-profile* nil))
+       (gtk:gtk-box-pack-end root-box-layout message-container :expand nil)
+       (gtk:gtk-box-pack-start message-container message-view :expand t)
+       (setf (gtk:gtk-widget-size-request message-container)
+             (list -1 (message-buffer-height window)))
 
-         (gtk:gtk-box-pack-end root-box-layout status-container :expand nil)
-         (gtk:gtk-box-pack-start status-container (gtk-object status-buffer) :expand t)
-         (setf (gtk:gtk-widget-size-request status-container)
-               (list -1 (height status-buffer)))
+       (gtk:gtk-box-pack-end root-box-layout status-container :expand nil)
+       (gtk:gtk-box-pack-start status-container (gtk-object status-buffer) :expand t)
+       (setf (gtk:gtk-widget-size-request status-container)
+             (list -1 (height status-buffer)))
 
-         (setf prompt-buffer-view (make-web-view *global-profile* nil))
-         (gtk:gtk-box-pack-end root-box-layout prompt-buffer-container :expand nil)
-         (gtk:gtk-box-pack-start prompt-buffer-container prompt-buffer-view :expand t)
-         (setf (gtk:gtk-widget-size-request prompt-buffer-container)
-               (list -1 0))
+       (setf prompt-buffer-view (make-web-view *global-profile* nil))
+       (gtk:gtk-box-pack-end root-box-layout prompt-buffer-container :expand nil)
+       (gtk:gtk-box-pack-start prompt-buffer-container prompt-buffer-view :expand t)
+       (setf (gtk:gtk-widget-size-request prompt-buffer-container)
+             (list -1 0))
 
-         (gtk:gtk-container-add gtk-object root-box-layout)
+       (gtk:gtk-container-add gtk-object root-box-layout)
 
-         (connect-signal window "key_press_event" nil (widget event)
-           (declare (ignore widget))
-           #+darwin
-           (push-modifier *browser* event)
-           (on-signal-key-press-event window event))
-         (connect-signal window "key_release_event" nil (widget event)
-           (declare (ignore widget))
-           #+darwin
-           (pop-modifier *browser* event)
-           (on-signal-key-release-event window event))
-         (connect-signal window "destroy" nil (widget)
-           (declare (ignore widget))
-           (on-signal-destroy window))
-         (connect-signal window "window-state-event" nil (widget event)
-           (declare (ignore widget))
-           (setf (fullscreen-p window)
-                 (find :fullscreen
-                       (gdk:gdk-event-window-state-new-window-state event)))
-           nil))
+       (connect-signal window "key_press_event" nil (widget event)
+         (declare (ignore widget))
+         #+darwin
+         (push-modifier *browser* event)
+         (on-signal-key-press-event window event))
+       (connect-signal window "key_release_event" nil (widget event)
+         (declare (ignore widget))
+         #+darwin
+         (pop-modifier *browser* event)
+         (on-signal-key-release-event window event))
+       (connect-signal window "destroy" nil (widget)
+         (declare (ignore widget))
+         (on-signal-destroy window))
+       (connect-signal window "window-state-event" nil (widget event)
+         (declare (ignore widget))
+         (setf (fullscreen-p window)
+               (find :fullscreen
+                     (gdk:gdk-event-window-state-new-window-state event)))
+         nil))
 
-       (unless *headless-p*
-         (gtk:gtk-widget-show-all gtk-object))))))
+     (unless *headless-p*
+       (gtk:gtk-widget-show-all gtk-object)))))
 
 (defmethod update-instance-for-redefined-class :after ((window window) added deleted plist &key)
   (declare (ignore added deleted plist))
@@ -1572,28 +1550,45 @@ local anyways, and it's better to refresh it if a load was queried."
                                                   (render-url url))))
 
 (defmethod ffi-buffer-evaluate-javascript ((buffer gtk-buffer) javascript &optional world-name)
-  (%within-renderer-thread
-   (lambda (&optional channel)
-     (when (gtk-object buffer)
-       (webkit2:webkit-web-view-evaluate-javascript
-        (gtk-object buffer)
-        javascript
-        (if channel
-            (lambda (result jsc-result)
-              (declare (ignore jsc-result))
-              (calispel:! channel result))
-            (lambda (result jsc-result)
-              (declare (ignore jsc-result))
-              result))
-        (lambda (condition)
-          (javascript-error-handler condition)
-          ;; Notify the listener that we are done.
-          (when channel
-            (calispel:! channel nil)))
-        world-name)))))
+  ;; TODO: How do we pass the callback result?  Is this a good way?
+
+  ;; TODO: When on renderer thread, what does with-renderer-thread-maybe-wait
+  ;; return as first value?  Here `void'.
+
+  ;; TODO: When not on renderer thread, what "thread"" " does
+  ;; with-renderer-thread-maybe-wait return as first value?
+  ;; Here, it should return `renderer-thread` (needs to be implemented).
+  ;; `with-renderer-thread-maybe-wait' channels are ignored because of the callbacks.
+  (let ((channel (make-channel))
+        (error-channel (make-channel)))
+    (with-renderer-thread-maybe-wait "evaluate javascript"
+      (when (gtk-object buffer)
+        (webkit2:webkit-web-view-evaluate-javascript
+         (gtk-object buffer)
+         javascript
+         (if channel
+             (lambda (result jsc-result)
+               (declare (ignore jsc-result))
+               (calispel:! channel result))
+             (lambda (result jsc-result)
+               (declare (ignore jsc-result))
+               result))
+         (lambda (condition)
+           (javascript-error-handler condition) ; TODO: Is this still necessary?
+           (calispel:! error-channel condition))
+         world-name)))
+    ;; (calispel:fair-alt
+    ;;   ((calispel:? channel result)
+    ;;    result)
+    ;;   ((calispel:? error-channel condition)
+    ;;    (with-protect ("Error in thread ~a: ~a" (bt:thread-name thread) :condition)
+    ;;      (error condition))))
+    (unless (renderer-thread-p)
+      ;; TODO: Implement-`renderer-thread'.
+      (wait-for-thread (renderer-thread) channel error-channel))))
 
 (defmethod ffi-buffer-evaluate-javascript-async ((buffer gtk-buffer) javascript &optional world-name)
-  (%within-renderer-thread-async
+  (with-renderer-thread
    (lambda ()
      (when (gtk-object buffer)
        (webkit2:webkit-web-view-evaluate-javascript
@@ -1893,8 +1888,8 @@ custom (the specified proxy) and none."
         (log:warn "Querying cookie policy in WebKitGTK is only supported from a non-renderer thread.")
         nil)
       (let ((result-channel (make-channel 1)))
-        (run-thread "WebKitGTK cookie-policy"
-          (within-gtk-thread
+        (with-thread-wait "WebKitGTK cookie-policy"
+          (with-renderer-thread "cookie-policy"
             (let* ((context (webkit:webkit-web-view-web-context (gtk-object buffer)))
                    (cookie-manager (webkit:webkit-web-context-get-cookie-manager context)))
               ;; TODO: Update upstream to export and fix `with-g-async-ready-callback'.
@@ -1908,8 +1903,8 @@ custom (the specified proxy) and none."
                  cookie-manager
                  (cffi:null-pointer)
                  callback
-                 (cffi:null-pointer))))))
-        (calispel:? result-channel))))
+                 (cffi:null-pointer)))))
+          (calispel:? result-channel)))))
 (defmethod (setf ffi-buffer-cookie-policy) (cookie-policy (buffer gtk-buffer))
   "VALUE is one of`:always', `:never' or `:no-third-party'."
   (let* ((context (webkit:webkit-web-view-web-context (gtk-object buffer)))

@@ -408,7 +408,7 @@ See `update-prompt-input' to update the changes visually."
            (ps:lisp input))))
   (update-prompt-input prompt-buffer input))
 
-(defun wait-on-prompt-buffer (prompt-buffer) ; TODO: Export?  Better name?
+(defun wait-for-prompt-buffer (prompt-buffer) ; TODO: Export?  Better name?
   "Block and return PROMPT-BUFFER results."
   (when (prompt-buffer-p prompt-buffer)
     (show-prompt-buffer prompt-buffer)
@@ -452,19 +452,15 @@ See the documentation of `prompt-buffer' to know more about the options."
       (when (str:ends-with-p ":" prompt-text)
         (log:warn "Prompt text ~s should not end with a ':'." prompt-text)
         (setf (getf args :prompt) (string-right-trim (uiop:strcat ":" serapeum:whitespace) prompt-text))))
-    (let ((prompt-object-channel (make-channel 1)))
-      (ffi-within-renderer-thread
-       *browser*
-       (lambda ()
+    (wait-for-prompt-buffer
+     (with-renderer-thread-wait
          (let ((prompt-buffer (apply #'make-instance 'prompt-buffer
                                      (append args
                                              (list
                                               :window (current-window)
                                               :result-channel (make-channel)
                                               :interrupt-channel (make-channel))))))
-           (calispel:! prompt-object-channel prompt-buffer))))
-      (let ((new-prompt (calispel:? prompt-object-channel)))
-        (wait-on-prompt-buffer new-prompt)))))
+           (calispel:! prompt-object-channel prompt-buffer))))))
 
 (export-always 'prompt1)
 (sera:eval-always
@@ -493,4 +489,4 @@ See the documentation of `prompt-buffer' to know more about the options."
             :sources (list (make-instance 'resume-prompt-source)))))
     (when old-prompt
       (prompter:resume old-prompt)
-      (wait-on-prompt-buffer old-prompt))))
+      (wait-for-prompt-buffer old-prompt))))
