@@ -30,36 +30,21 @@ CLASS is a class symbol."
     (:p "Set the values for frequently configured settings. "
         "Changes only apply to newly created buffers.")
     (:h2 "Keybinding style")
-    (:p (:button :class "button"
-                 :onclick (ps:ps (nyxt/ps:lisp-eval
-                                  `(progn
-                                     (nyxt::auto-configure
-                                      :class-name 'input-buffer
-                                      :form '(nyxt/emacs-mode:emacs-mode :activate nil :buffer input-buffer))
-                                     (nyxt::auto-configure
-                                      :class-name 'input-buffer
-                                      :form '(nyxt/vi-mode:vi-normal-mode :activate nil :buffer input-buffer)))))
-                 "Use default (CUA)"))
-    (:p (:button :class "button"
-                 :onclick (ps:ps (nyxt/ps:lisp-eval
-                                  `(progn
-                                     (nyxt::auto-configure
-                                      :class-name 'input-buffer
-                                      :form '(nyxt/vi-mode:vi-normal-mode :activate nil :buffer input-buffer))
-                                     (nyxt::auto-configure
-                                      :class-name 'input-buffer
-                                      :form '(nyxt/emacs-mode:emacs-mode :activate t :buffer input-buffer)))))
-                 "Use Emacs"))
-    (:p (:button :class "button"
-                 :onclick (ps:ps (nyxt/ps:lisp-eval
-                                  `(progn
-                                     (nyxt::auto-configure
-                                      :class-name 'input-buffer
-                                      :form '(nyxt/emacs-mode:emacs-mode :activate nil :buffer input-buffer))
-                                     (nyxt::auto-configure
-                                      :class-name 'input-buffer
-                                      :form '(nyxt/vi-mode:vi-normal-mode :activate t :buffer input-buffer)))))
-                 "Use vi"))
+    (loop for (name emacs-enable vi-enable)
+            in '(("default (CUA)" nil nil) ("Emacs" t nil) ("vi" nil t))
+          collect
+          (:label
+           (:input :type "radio"
+                   :name "keybinding"
+                   :onclick (ps:ps (nyxt/ps:lisp-eval
+                                    `(progn
+                                       (nyxt::auto-configure
+                                        :class-name 'input-buffer
+                                        :form '(nyxt/emacs-mode:emacs-mode :activate ,emacs-enable :buffer input-buffer))
+                                       (nyxt::auto-configure
+                                        :class-name 'input-buffer
+                                        :form '(nyxt/vi-mode:vi-normal-mode :activate ,vi-enable :buffer input-buffer))))))
+           (format nil "Use ~a" name)))
     (flet ((generate-colors (theme-symbol text)
              (spinneret:with-html-string
                (:p (:button :class "button"
@@ -91,15 +76,48 @@ CLASS is a class symbol."
        (:li (:raw (generate-colors 'theme::+light-theme+ "Use default (Light theme)")))
        (:li (:raw (generate-colors 'theme::+dark-theme+ "Use Dark theme")))))
     (:h2 "Miscellaneous")
+    (:label
+     "Session restoration"
+     (:select
+         :id "session"
+       :name "session"
+       :onchange (ps:ps
+                   (ps:case (ps:@ this value)
+                     ("ask" (nyxt/ps:lisp-eval
+                             `(nyxt::auto-configure
+                               :class-name 'browser
+                               :slot 'session-restore-prompt
+                               :slot-value :always-ask)))
+                     ("always" (nyxt/ps:lisp-eval
+                                `(nyxt::auto-configure
+                                  :class-name 'browser
+                                  :slot 'session-restore-prompt
+                                  :slot-value :always-restore)))
+                     ("never" (nyxt/ps:lisp-eval
+                               `(nyxt::auto-configure
+                                 :class-name 'browser
+                                 :slot 'session-restore-prompt
+                                 :slot-value :never-restore)))))
+       (:option :value "ask" "Always ask (default)")
+       (:option :value "never" "Never restore")
+       (:option :value "always" "Always restore")))
+    (:label "Set default zoom ratio"
+            (:input :type "number"
+                    :id "zoom"
+                    :min "0.1"
+                    :max "5"
+                    :step "0.1"
+                    :value "1"
+                    :onchange (ps:ps (nyxt/ps:lisp-eval
+                                      `(nyxt::auto-configure
+                                        :class-name 'document-buffer
+                                        :slot 'current-zoom-ratio
+                                        :slot-value (sera:parse-float (peval (ps:@ (nyxt/ps:qs document "#zoom") value))))))))
     (:ul
      (:li (:button :class "button"
                    :onclick (ps:ps (nyxt/ps:lisp-eval
                                     `(nyxt::configure-slot 'default-new-buffer-url 'browser :type 'string)))
                    "Set default new buffer URL"))
-     (:li (:button :class "button"
-                   :onclick (ps:ps (nyxt/ps:lisp-eval
-                                    `(nyxt::configure-slot 'current-zoom-ratio 'document-buffer)))
-                   "Set default zoom ratio"))
      (:li (:button :class "button"
                    :onclick (ps:ps (nyxt/ps:lisp-eval
                                     `(nyxt::auto-configure
