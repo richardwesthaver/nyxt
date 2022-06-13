@@ -37,13 +37,21 @@ CLASS is a class symbol."
            (:input :type "radio"
                    :name "keybinding"
                    :onclick (ps:ps (nyxt/ps:lisp-eval
-                                    `(progn
-                                       (nyxt::auto-configure
-                                        :class-name 'input-buffer
-                                        :form '(nyxt/emacs-mode:emacs-mode :activate ,emacs-enable :buffer input-buffer))
-                                       (nyxt::auto-configure
-                                        :class-name 'input-buffer
-                                        :form '(nyxt/vi-mode:vi-normal-mode :activate ,vi-enable :buffer input-buffer))))))
+                                    (ps:lisp
+                                     (cond
+                                       (emacs-enable
+                                        `(nyxt::auto-configure
+                                          :class-name 'input-buffer
+                                          :form '(enable-modes 'nyxt/emacs-mode:emacs-mode input-buffer)))
+                                       (vi-enable
+                                        `(nyxt::auto-configure
+                                          :class-name 'input-buffer
+                                          :form '(enable-modes 'nyxt/vi-mode:vi-normal-mode input-buffer)))
+                                       (t
+                                        `(nyxt::auto-configure
+                                          :class-name 'input-buffer
+                                          :form '(disable-modes '(nyxt/vi-mode:vi-normal-mode nyxt/emacs-mode:emacs-mode)
+                                                  input-buffer))))))))
            (format nil "Use ~a" name)))
     (flet ((generate-colors (theme-symbol text)
              (spinneret:with-html-string
