@@ -37,7 +37,26 @@
         :background-color ,theme:accent
         :color ,theme:on-accent)
       `(".nyxt-element-hint"
-        :background-color ,theme:accent))
+        :background-color ,theme:accent)
+      `("#nyxt-overlay"
+        :position "fixed"
+        :top "0"
+        :left "0"
+        :right "0"
+        :bottom "0"
+        :background ,theme:on-background
+        :opacity 0
+        :z-index #.(1- (expt 2 31)))
+      `("#nyxt-rectangle-selection"
+        :position "absolute"
+        :top "0"
+        :left "0"
+        :border-style "dotted"
+        :border-width "1px"
+        :border-color ,theme:on-background
+        :background-color ,theme:on-background
+        :opacity 1
+        :z-index ,(1- (expt 2 30))))
     :documentation "The style of the hint overlays.")
    (show-hint-scope-p
     nil
@@ -295,12 +314,14 @@ FUNCTION is the action to perform on the selected elements."
                             :fit-to-prompt
                             :default)
                 :hide-suggestion-count-p (fit-to-prompt-p (find-submode 'hint-mode))
-                :sources (make-instance 'hint-source
-                                        :multi-selection-p multi-selection-p
-                                        :constructor
-                                        (lambda (source)
-                                          (declare (ignore source))
-                                          (add-hints :selector selector)))
+                :sources (list
+                          (make-instance 'frame-source)
+                          (make-instance 'hint-source
+                                         :multi-selection-p multi-selection-p
+                                         :constructor
+                                         (lambda (source)
+                                           (declare (ignore source))
+                                           (add-hints :selector selector))))
                 :after-destructor (lambda () (with-current-buffer buffer (remove-hints))))))
     (funcall function result)))
 
@@ -497,3 +518,123 @@ modes."
                (lambda (result) (%copy-hint-url (first result)))
                :multi-selection-p nil
                :selector "a"))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Frame selection engine:
+
+(defun frame-element-select ()
+  "Allow the user to draw a frame around elements to select them."
+  (ps-labels :async t
+    ((add-overlay
+      ()
+      "Add a selectable overlay to the screen."
+      (defparameter selection
+        (ps:create x1 0 y1 0
+                   x2 0 y2 0
+                   set1 false
+                   set2 false))
+      (defun add-overlay ()
+        (ps:let ((element (ps:chain document (create-element "div"))))
+          (setf (ps:@ element id) "nyxt-overlay")
+          (ps:chain document body (append-child element))))
+      (defun add-selection-rectangle ()
+        (ps:let ((element (ps:chain document (create-element "div"))))
+          (setf (ps:@ element id) "nyxt-rectangle-selection")
+          (ps:chain document body (append-child element))))
+      (defun update-selection-rectangle ()
+        (ps:let ((element (nyxt/ps:qs document "#nyxt-rectangle-selection")))
+          (setf (ps:@ element style left) (+ (ps:chain selection x1) "px"))
+          (setf (ps:@ element style top) (+ (ps:chain selection y1) "px"))
+          (setf (ps:@ element style width)
+                (+ (- (ps:chain selection x2)
+                      (ps:chain selection x1))
+                   "px"))
+          (setf (ps:@ element style height)
+                (+ (- (ps:chain selection y2)
+                      (ps:chain selection y1))
+                   "px"))))
+      (defun add-listeners ()
+        (setf (ps:chain (nyxt/ps:qs document "#nyxt-overlay") onmousemove)
+              (lambda (e)
+                (when (and (ps:chain selection set1)
+                           (not (ps:chain selection set2)))
+                  (setf (ps:chain selection x2) (ps:chain e |pageX|))
+                  (setf (ps:chain selection y2) (ps:chain e |pageY|))
+                  (update-selection-rectangle))))
+        (setf (ps:chain (nyxt/ps:qs document "#nyxt-overlay") onclick)
+              (lambda (e)
+                (if (not (ps:chain selection set1))
+                    (progn
+                      (add-selection-rectangle)
+                      (setf (ps:chain selection x1) (ps:chain e |pageX|))
+                      (setf (ps:chain selection y1) (ps:chain e |pageY|))
+                      (setf (ps:chain selection set1) true))
+                    (progn
+                      (setf (ps:chain selection x2) (ps:chain e |pageX|))
+                      (setf (ps:chain selection y2) (ps:chain e |pageY|))
+                      (setf (ps:chain selection set2) true))))))
+      (add-overlay)
+      (add-listeners)))
+    (add-stylesheet)
+    (add-overlay)))
+
+(defun frame-element-get-selection (&key (selector (hints-selector (find-submode 'hint-mode))))
+  "Get the selected elements drawn by the user."
+  (ps-labels
+    ((get-selection
+      (selector)
+      (defun element-in-selection-p (selection element)
+        "Determine if a element is bounded within a selection."
+        (ps:let* ((element-rect (ps:chain element (get-bounding-client-rect)))
+                  (offsetX (ps:chain window |pageXOffset|))
+                  (offsetY (ps:chain window |pageYOffset|))
+                  (element-left (+ (ps:chain element-rect left) offsetX))
+                  (element-right (+ (ps:chain element-rect right) offsetX))
+                  (element-top (+ (ps:chain element-rect top) offsetY))
+                  (element-bottom (+ (ps:chain element-rect bottom) offsetY)))
+          (if (and
+               (<= element-left (ps:chain selection x2))
+               (>= element-right (ps:chain selection x1))
+               (<= element-top (ps:chain selection y2))
+               (>= element-bottom (ps:chain selection y1)))
+              t nil)))
+      (defun collect-selection (elements selection)
+        "Collect elements within a selection"
+        (loop for element in elements
+              when (element-in-selection-p selection element)
+                collect (ps:chain element (get-attribute "nyxt-identifier"))))
+      (collect-selection (nyxt/ps:qsa document (ps:lisp selector)) selection)))
+    (loop for id in (get-selection selector)
+          collect (elt (clss:select (format nil "[nyxt-identifier=~a]" id) (document-model (current-buffer))) 0))))
+
+(defun frame-element-clear ()
+  "Clear the selection frame created by the user."
+  (ps-eval
+    (ps:chain (nyxt/ps:qs document "#nyxt-rectangle-selection") (remove))
+    (ps:chain (nyxt/ps:qs document "#nyxt-overlay") (remove))))
+
+(define-class frame-source (prompter:source)
+  ((prompter:name "Selection Frame")
+   (buffer :accessor buffer :initarg :buffer)
+   (prompter:filter-preprocessor (lambda (initial-suggestions-copy source input)
+                                   (declare (ignore initial-suggestions-copy source input))
+                                   (remove-duplicates (frame-element-get-selection)
+                                                      :test #'quri:uri-equal
+                                                      :key #'url)))
+   (prompter:constructor (lambda (source)
+                           (declare (ignore source))
+                           (frame-element-select)
+                           (list)))))
+
+(define-command select-frame-new-buffer (&key (buffer (current-buffer)))
+  "Select a frame and open the links in new buffers."
+  (prompt :prompt "Open selected links in new buffers"
+          :sources (make-instance
+                    'frame-source
+                    :buffer buffer
+                    :multi-selection-p t
+                    :return-actions (lambda-command open-new-buffers (urls)
+                                      (mapcar (lambda (i) (make-buffer :url (quri:uri i)))
+                                              urls)))
+          :after-destructor (lambda () (with-current-buffer buffer
+                                         (frame-element-clear)))))

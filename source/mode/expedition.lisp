@@ -36,18 +36,3 @@
         (decf (index expedition))
         (buffer-load (nth (index expedition) (urls expedition))))
       (echo "Start of expedition.")))
-
-(define-command-global select-frame-expedition (&key (buffer (current-buffer)))
-  "Run an expedition through a set of URLs selected with a rectangle."
-  (let* ((urls (reverse (prompt :prompt "Start expedition with the following links"
-                                :sources (make-instance 'nyxt/document-mode::frame-source
-                                                        :buffer buffer
-                                                        :multi-selection-p t)
-                                :after-destructor
-                                (lambda ()
-                                  (with-current-buffer buffer
-                                    (nyxt/document-mode::frame-element-clear))))))
-         (urls (mapcar #'quri:uri urls))
-         (buffer (make-buffer :title "" :url (first urls))))
-    (enable (make-instance 'expedition-mode :urls urls :buffer buffer))
-    (set-current-buffer buffer)))
