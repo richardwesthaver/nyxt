@@ -283,7 +283,7 @@ Implies that the request is a top-level one."
   (let* ((rules (matching-auto-rules url buffer))
          (previous-url (previous-url buffer))
          (previous-rules (when previous-url (matching-auto-rules previous-url buffer))))
-    (when (and rules previous-url (not previous-rules))
+    (when (or (and previous-url (not previous-rules)))
       (save-last-active-modes buffer previous-url))
     (cond
       ((not rules)
