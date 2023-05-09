@@ -9,7 +9,7 @@ on:
   push:
     tags: '*'
     ## To test, uncomment the line below with branch name used for review.
-    # branches: [ my-work-branch ]
+    branches: [ flatpak ]
 
 jobs:
   build-binaries:
@@ -73,7 +73,7 @@ jobs:
       shell: bash
       run: |
         echo "Command: guix pack -RR --no-grafts --compression=xz --symlink=/usr/local/bin/nyxt=bin/nyxt --root=nyxt-$(cat version).tar.xz -L build-scripts/ nyxt" >> guix-recipe.txt
-        guix pack -RR --no-grafts --compression=xz --symlink=/usr/local/bin/nyxt=bin/nyxt --root=nyxt-$(cat version).tar.xz -L build-scripts/ nyxt > store-path.txt
+        guix pack -RR --no-grafts --symlink=/usr/local/bin/nyxt=bin/nyxt --root=nyxt-$(cat version).tar.gz -L build-scripts/ nyxt > store-path.txt
     - name: Generate release notes
       shell: bash
       run: |
@@ -83,7 +83,7 @@ jobs:
     - name: Generate Guix pack reproduction recipe
       shell: bash
       run: |
-        sha256sum nyxt-*.tar.xz > nyxt-$(cat version).tar.xz.sha256sum
+        sha256sum nyxt-*.tar.gz > nyxt-$(cat version).tar.gz.sha256sum
         echo "Store path: $(cat store-path.txt)" >> guix-recipe.txt
         echo "Guix describe: $(guix describe)" >> guix-recipe.txt
     - name: Generate source archive with submodules
@@ -94,4 +94,4 @@ jobs:
       uses: ncipollo/release-action@v1
       with:
         bodyFile: release.txt
-        artifacts: "nyxt-*.tar.xz*,guix-recipe.txt,*.flatpak"
+        artifacts: "nyxt-*.tar.xz*,nyxt-*.tar.gz,guix-recipe.txt,*.flatpak"
