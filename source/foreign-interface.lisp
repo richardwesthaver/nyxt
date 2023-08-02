@@ -3,6 +3,10 @@
 
 (in-package :nyxt)
 
+;; Idea: if a define-ffi-generic is expected to return a value then add it in
+;; the defgeneric definition.  From the specializer method, call
+;; `call-next-method'.
+
 (defmacro define-ffi-generic (name arguments &body (documentation . options))
   "Like `defgeneric' but export NAME and define default dummy method if none is provided.
 If the `:setter-p' option is non-nil, then a dummy setf method is defined."
@@ -36,6 +40,7 @@ If the `:setter-p' option is non-nil, then a dummy setf method is defined."
   "Delete WINDOW, possibly freeing the associated widgets.
 After this call, the window should not be displayed.")
 
+;; this docstring is wrong...  it doesn't remove Nyxt interface elements.
 (define-ffi-generic ffi-window-fullscreen (window)
   "Make WINDOW fullscreen.
 Removes all the Nyxt interface element and leaves the open page as the only
@@ -89,16 +94,22 @@ The specialized method may call `call-next-method' to return a sensible fallback
           (call-next-method))))
 
 (define-ffi-generic ffi-window-set-buffer (window buffer &key focus)
+  ;; should mention that returns buffer
   "Set the BUFFER's widget to display in WINDOW.")
 
+;; I have the feeling that this method should have prompt-buffer as its input
+;; alone, since prompt-buffer objects have window as one of its slots.
 (define-ffi-generic ffi-focus-prompt-buffer (window prompt-buffer)
+  ;; should mention that returns prompt buffer
   "Focus PROMPT-BUFFER in WINDOW.")
 
 (define-ffi-generic ffi-window-add-panel-buffer (window buffer side)
   "Make widget for panel BUFFER and add it to the WINDOW widget.
 SIDE is one of `:left' or `:right'.")
 (define-ffi-generic ffi-window-delete-panel-buffer (window buffer)
-  "Unbind the panel BUFFER widget from WINDOW.")
+  "Unbind the panel BUFFER widget from WINDOW."
+  ;; (delete panel-buffer (panel-buffers window))
+  )
 
 (define-ffi-generic ffi-height (object)
   "Return the OBJECT height in pixels as a number.
@@ -111,12 +122,18 @@ Dispatches over `window' and classes inheriting from `buffer'.
 Usually setf-able."
   (:setter-p t))
 
+;; Seems rather useless since only `resurrect-buffer' calls it...
+;; In the GTK port, customize-instance :after also calls it.
+;; Its definition should a streamlined version of `make-buffer'. That way,
+;; `ffi-buffer-make' and `ffi-window-make' would be similar in spirit.
 (define-ffi-generic ffi-buffer-make (buffer)
   "Make BUFFER widget.")
 (define-ffi-generic ffi-buffer-delete (buffer)
   "Delete BUFFER widget.")
 
 (define-ffi-generic ffi-buffer-load (buffer url)
+  ;; useless because the most specific method runs first?
+  ;; (declare (type quri:uri url))
   "Load URL into BUFFER through the renderer.")
 
 (define-ffi-generic ffi-buffer-load-html (buffer html-content url)
@@ -242,6 +259,7 @@ This often translates in the termination of the \"main loop\" associated to the 
 (define-ffi-generic ffi-initialize (browser urls startup-timestamp)
   "Renderer-specific initialization.
 When done, call `call-next-method' to finalize the startup."
+  ;; TODO Rename to finalize-initialization.
   (finalize browser urls startup-timestamp))
 
 (define-ffi-generic ffi-inspector-show (buffer)
@@ -250,6 +268,9 @@ When done, call `call-next-method' to finalize the startup."
 (define-ffi-generic ffi-print-status (window html-body)
   "Display status buffer in WINDOW according to HTML-BODY.
 The `style' of the `status-buffer' is honored."
+  ;; TODO when nyxt is started, this is called multiple times with different
+  ;; window objects.  why?
+  ;; (break)
   (with-slots (status-buffer) window
     (html-write (spinneret:with-html-string
                   (:head (:nstyle (style status-buffer)))
