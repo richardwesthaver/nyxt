@@ -117,6 +117,18 @@ The handlers take the window as argument."))
 (defmethod initialize-instance :after ((window window) &key (browser *browser*)
                                        &allow-other-keys)
   "Initialize some required slots like ID and status-buffer."
+  ;; isn't it weird? window has a status-buffer slot (which makes sense). but
+  ;; why does status-buffer has a window slot? (same for prompt-buffer)
+
+  ;; this implies (make-instance 'window) returns a window whose status-buffer
+  ;; has its window set properly.  on the other hand, (make-instance
+  ;; 'status-buffer) has no window associated with it.
+
+  ;; what would we lose if status-buffer had no window slot? it would be
+  ;; probably harder to update the status buffer of each window (in case of
+  ;; multiple windows).  see calls to `define-setf-handler' in status.lisp.
+
+  ;; does (make-instance 'window) call ffi-window-set-buffer? no.
   (setf (window (status-buffer window)) window)
   (setf (window (message-buffer window)) window)
   (when browser
