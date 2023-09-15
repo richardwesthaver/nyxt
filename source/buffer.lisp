@@ -857,6 +857,9 @@ Also see `panel-page'."))
    (height
     24
     :type integer
+    :writer nil
+    :reader height
+    :export t
     :documentation "The height of the status buffer in pixels.")
    (glyph-mode-presentation-p
     nil
@@ -1002,6 +1005,10 @@ Also see `panel-page'."))
   (:export-predicate-name-p t)
   (:metaclass user-class))
 
+(defmethod (setf height) (value (status-buffer status-buffer))
+  (setf (ffi-height status-buffer) value)
+  (setf (slot-value status-buffer 'height) value))
+
 (define-class message-buffer (input-buffer)
   ((window
     nil
@@ -1010,6 +1017,9 @@ Also see `panel-page'."))
    (height
     16
     :type integer
+    :writer nil
+    :reader height
+    :export t
     :documentation "The height of the message buffer in pixels.")
    (style (theme:themed-css (theme *browser*)
             `(body
@@ -1023,6 +1033,10 @@ Also see `panel-page'."))
   (:export-accessor-names-p t)
   (:export-predicate-name-p t)
   (:metaclass user-class))
+
+(defmethod (setf height) (value (message-buffer message-buffer))
+  (setf (ffi-height message-buffer) value)
+  (setf (slot-value message-buffer 'height) value))
 
 (defmethod customize-instance :after ((buffer buffer)
                                       &key (browser *browser*)
