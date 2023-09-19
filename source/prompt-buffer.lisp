@@ -456,41 +456,6 @@ an integer."
                                 "selection")
                           :class (when (prompter:marked-p source (prompter:value suggestion))
                                    "marked")
-                          :onclick (when (mouse-support-p prompt-buffer)
-                                     (ps:ps
-                                       (cond
-                                         ((or (ps:chain window event ctrl-key)
-                                              (ps:chain window event shift-key))
-                                          (nyxt/ps:lisp-eval
-                                           (:title "mark-this-suggestion"
-                                            :buffer prompt-buffer)
-                                           (prompter::set-current-suggestion
-                                            prompt-buffer
-                                            (- suggestion-index cursor-index))
-                                           (prompter:toggle-mark prompt-buffer)
-                                           (prompter::set-current-suggestion
-                                            prompt-buffer
-                                            (- cursor-index suggestion-index))
-                                           (prompt-render-suggestions prompt-buffer)))
-                                         ((ps:chain window event alt-key)
-                                          (nyxt/ps:lisp-eval
-                                           (:title "return-this-suggestion-with-another-action"
-                                            :buffer prompt-buffer)
-                                           (prompter::set-current-suggestion
-                                            prompt-buffer
-                                            (- suggestion-index cursor-index))
-                                           (uiop:symbol-call
-                                            :nyxt/prompt-buffer-mode :set-action-on-return
-                                            (nyxt::current-prompt-buffer))))
-                                         (t
-                                          (nyxt/ps:lisp-eval
-                                           (:title "return-this-suggestion"
-                                            :buffer prompt-buffer)
-                                           (prompter::set-current-suggestion
-                                            prompt-buffer
-                                            (- suggestion-index cursor-index))
-                                           (prompter:run-action-on-return
-                                            (nyxt::current-prompt-buffer)))))))
                           (when (prompter:enable-marks-p source)
                             (:td
                              (:input
@@ -517,11 +482,47 @@ an integer."
                                                  (prompter:toggle-mark prompt-buffer))
                                                (prompt-render-suggestions prompt-buffer)))))))
                           (loop for (nil attribute attribute-display)
-                                in (prompter:active-attributes suggestion :source source)
-                                collect (:td :title attribute
-                                             (if attribute-display
-                                                 (:raw attribute-display)
-                                                 attribute))))))))))
+                                  in (prompter:active-attributes suggestion :source source)
+                                collect (:td
+                                         :title attribute
+                                         :onclick (when (mouse-support-p prompt-buffer)
+                                                    (ps:ps
+                                                      (cond
+                                                        ((or (ps:chain window event ctrl-key)
+                                                             (ps:chain window event shift-key))
+                                                         (nyxt/ps:lisp-eval
+                                                          (:title "mark-this-suggestion"
+                                                           :buffer prompt-buffer)
+                                                          (prompter::set-current-suggestion
+                                                           prompt-buffer
+                                                           (- suggestion-index cursor-index))
+                                                          (prompter:toggle-mark prompt-buffer)
+                                                          (prompter::set-current-suggestion
+                                                           prompt-buffer
+                                                           (- cursor-index suggestion-index))
+                                                          (prompt-render-suggestions prompt-buffer)))
+                                                        ((ps:chain window event alt-key)
+                                                         (nyxt/ps:lisp-eval
+                                                          (:title "return-this-suggestion-with-another-action"
+                                                           :buffer prompt-buffer)
+                                                          (prompter::set-current-suggestion
+                                                           prompt-buffer
+                                                           (- suggestion-index cursor-index))
+                                                          (uiop:symbol-call
+                                                           :nyxt/prompt-buffer-mode :set-action-on-return
+                                                           (nyxt::current-prompt-buffer))))
+                                                        (t
+                                                         (nyxt/ps:lisp-eval
+                                                          (:title "return-this-suggestion"
+                                                           :buffer prompt-buffer)
+                                                          (prompter::set-current-suggestion
+                                                           prompt-buffer
+                                                           (- suggestion-index cursor-index))
+                                                          (prompter:run-action-on-return
+                                                           (nyxt::current-prompt-buffer)))))))
+                                         (if attribute-display
+                                             (:raw attribute-display)
+                                             attribute))))))))))
 
 (export 'prompt-render-suggestions)
 (define-generic prompt-render-suggestions ((prompt-buffer prompt-buffer))
