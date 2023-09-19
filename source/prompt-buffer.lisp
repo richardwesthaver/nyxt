@@ -427,6 +427,8 @@ an integer."
     (when (prompter:suggestions source)
       (:table :class "source-content"
               (:colgroup
+               (when (prompter:enable-marks-p source)
+                 (:col :style "width: 3em"))
                (dolist (width (attribute-widths
                                source :dynamic-p (dynamic-attribute-width-p prompt-buffer)))
                  (:col :style (format nil "width: ~,2f%" (* 100 width)))))
@@ -435,6 +437,8 @@ an integer."
                                        (sera:single (prompter:active-attributes-keys source))))
                               "display:none;"
                               "display:revert;")
+                   (when (prompter:enable-marks-p source)
+                     (:th "Mark"))
                    (loop for attribute-key in (prompter:active-attributes-keys source)
                          collect (:th (spinneret::escape-string attribute-key))))
               (loop
@@ -487,6 +491,31 @@ an integer."
                                             (- suggestion-index cursor-index))
                                            (prompter:run-action-on-return
                                             (nyxt::current-prompt-buffer)))))))
+                          (when (prompter:enable-marks-p source)
+                            (:td
+                             (:input
+                              :type "checkbox"
+                              :checked (prompter:marked-p source (prompter:value suggestion))
+                              :onchange (ps:ps
+                                          (if (ps:chain window event target checked)
+                                              (nyxt/ps:lisp-eval
+                                               (:title "mark-this-suggestion"
+                                                :buffer prompt-buffer)
+                                               (prompter::set-current-suggestion
+                                                prompt-buffer
+                                                (- suggestion-index cursor-index))
+                                               (unless (prompter:marked-p source (prompter:value suggestion))
+                                                 (prompter:toggle-mark prompt-buffer))
+                                               (prompt-render-suggestions prompt-buffer))
+                                              (nyxt/ps:lisp-eval
+                                               (:title "unmark-this-suggestion"
+                                                :buffer prompt-buffer)
+                                               (prompter::set-current-suggestion
+                                                prompt-buffer
+                                                (- suggestion-index cursor-index))
+                                               (when (prompter:marked-p source (prompter:value suggestion))
+                                                 (prompter:toggle-mark prompt-buffer))
+                                               (prompt-render-suggestions prompt-buffer)))))))
                           (loop for (nil attribute attribute-display)
                                 in (prompter:active-attributes suggestion :source source)
                                 collect (:td :title attribute
