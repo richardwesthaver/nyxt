@@ -855,6 +855,8 @@ a scalable icon."))))
           ", to change the position of hint overlays.")))
   (:nsection :title "Bug fixes"
     (:ul
+     (:li "Fix connection to Nyxt via commands "
+          (:code "start-swank") " and " (:code "start-slynk") ".")
      (:li "Fix bug with subsequent invocations of "
           (:nxref :macro 'define-configuration) " on the same class and slot
 being overwritten by the first.")))
