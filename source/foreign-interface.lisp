@@ -97,8 +97,9 @@ The specialized method may call `call-next-method' to return a sensible fallback
   ;; should mention that returns buffer
   "Set the BUFFER's widget to display in WINDOW.")
 
-;; I have the feeling that this method should have prompt-buffer as its input
-;; alone, since prompt-buffer objects have window as one of its slots.
+;; First, I have the feeling that this method should have prompt-buffer as its
+;; input alone, since prompt-buffer objects have window as one of its slots.
+;; Second, is this generic needed at all?
 (define-ffi-generic ffi-focus-prompt-buffer (window prompt-buffer)
   ;; should mention that returns prompt buffer
   "Focus PROMPT-BUFFER in WINDOW.")
