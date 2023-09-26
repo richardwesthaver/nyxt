@@ -956,6 +956,7 @@ See `gtk-browser's `modifier-translator' slot."
                             (delete nil
                                     (append (list (status-buffer (current-window))
                                                   (message-buffer (current-window)))
+                                            ;; Study prompt buffer.
                                             (nyxt::active-prompt-buffers (current-window))
                                             (nyxt::panel-buffers (current-window))
                                             (buffer-list)))
@@ -1289,7 +1290,9 @@ the `active-buffer'."
   (setf (gtk:gtk-widget-size-request (prompt-buffer-container (window buffer)))
         (list -1 height))
   (if (eql 0 height)
+      ;; why not call ffi-window-set-buffer?
       (gtk:gtk-widget-grab-focus (gtk-object (nyxt::active-buffer (window buffer))))
+      ;; why not call ffi-focus-prompt-buffer?
       (gtk:gtk-widget-grab-focus (prompt-buffer-view (window buffer)))))
 
 (define-ffi-method ffi-focus-prompt-buffer ((window gtk-window)
