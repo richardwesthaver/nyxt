@@ -75,6 +75,7 @@ the generic functions on `status-buffer'.  Finally set the `window'
     :type message-buffer
     :documentation "The `message-buffer' instance for this window.")
    (prompt-buffer-open-height
+    ;; it doesn't ensure of course...
     ;; Ensures that 10 suggestions are vertically shown, while the last entry
     ;; appears truncated thus making it clear that more follow. It's also set
     ;; exactly to a third of Nyxt window height.
