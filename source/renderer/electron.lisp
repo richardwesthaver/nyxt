@@ -74,7 +74,7 @@
   (:metaclass user-class))
 
 (define-class electron-window (electron:browser-window)
-  ()
+  ((prompt-buffer-view (make-instance 'electron-buffer)))
   (:export-class-name-p t)
   (:export-accessor-names-p t)
   (:metaclass user-class))
@@ -240,6 +240,7 @@
 
 ;; https://stackoverflow.com/questions/60296423/how-to-focus-on-electron-window-when-it-opens-after-focussing-on-another-program
 ;; https://github.com/nullxx/electron-active-window
+;; important for prompt-buffer
 (defmethod ffi-window-active ((browser electron-browser))
   ;; TODO only handles a single window for now.
   (or (electron::last-active-window browser)
@@ -248,6 +249,8 @@
 (defmethod ffi-window-set-buffer ((window electron:browser-window)
                                   (buffer electron-buffer)
                                   &key (focus t))
+  ;; specialize on the buffer type, i.e. prompt buffer
+
   ;; in GTK, when a prompt buffer is open and a new main buffer is opened, the
   ;; prompt buffer remains open.  As per below, the prompt buffers are closed
   ;; when a main buffer is called
@@ -331,21 +334,50 @@
                         width
                         (electron::get-bounds panel-buffer 'height)))
 
+;; Test prompt-buffer:
+;; Open:
+;; (let ((prompt-buffer (make-instance 'prompt-buffer :window (current-window))))
+;;   (push prompt-buffer (active-prompt-buffers (window prompt-buffer)))
+;;   (prompt-render prompt-buffer)
+;;   (setf (height prompt-buffer) 200))
+;; Close:
+;; (setf (height (first (active-prompt-buffers (current-window)))) 0)
 (defmethod ffi-height ((prompt-buffer prompt-buffer))
   ;; same as for status-buffer
-  (electron::get-bounds prompt-buffer 'height))
+  (electron::get-bounds (prompt-buffer-view (window prompt-buffer)) 'height))
 (defmethod (setf ffi-height) ((height integer) (prompt-buffer prompt-buffer))
   ;; abstract into a defun since this is the same code as for status-buffer.
-  (electron::set-bounds prompt-buffer
-                        (electron::get-bounds prompt-buffer 'x)
-                        (electron::get-bounds prompt-buffer 'y)
-                        (electron::get-bounds prompt-buffer 'width)
-                        height))
+  ;; in GTK, when set to 0, it hides the prompt buffer and focuses the
+  ;; active-buffer.
+  (if (eql height 0)
+      ;; why not call ffi-window-set-buffer?
+      (progn
+        ;; ffi-buffer-delete?
+        (electron::remove-browser-view (window prompt-buffer) prompt-buffer)
+        (electron::kill (electron:web-contents prompt-buffer))
+        (electron::focus (electron:web-contents (nyxt::active-buffer (window prompt-buffer)))))
+      (let ((window (window prompt-buffer)))
+        (electron::add-browser-view window prompt-buffer)
+        ;; Bug: test how resizing the window affects the geometry of the buffer.
+        (electron::set-auto-resize prompt-buffer t nil nil nil)
+        (electron::set-bounds prompt-buffer
+                              0
+                              ;; 0
+                              (- (electron::get-bounds window 'height)
+                                 (+ height
+                                    (height (status-buffer window))
+                                    (height (message-buffer window))))
+                              (electron::get-bounds window 'width)
+                              height)
+        (electron::load-url (electron::web-contents prompt-buffer) "about:blank")
+        (electron::set-top-browser-view window prompt-buffer)
+        ;; why not call ffi-focus-prompt-buffer?
+        (electron::focus (electron:web-contents prompt-buffer)))))
 
 (defmethod ffi-focus-prompt-buffer ((window electron:browser-window)
                                     (prompt-buffer prompt-buffer))
   ;; I'm confused by this... each window can have its own prompt-buffer?
-  (electron::focus (electron:web-contents prompt-buffer))
+  (electron::focus (electron:web-contents (prompt-buffer-view (window prompt-buffer))))
   ;; (electron::focus (electron::window-from-browser-view (interface window)
   ;;                                                      prompt-buffer))
   prompt-buffer)
