@@ -10,13 +10,20 @@
 ;; (nyxt:start :urls '("https://en.wikipedia.org/wiki/Tomato"))
 ;; (buffer-load "https://en.wikipedia.org/wiki/Potato")
 
-;; Next goal: message buffer
+;; message buffer
 ;; Test via (ffi-print-message (current-window) "hello")
 
-;; Next goal: status buffer
+;; status buffer
+;; Ensure that it is rendered properly when resizing window
+;; Add support to nyxt://
 ;; Test via (print-status (window-make *browser*))
 
-;; For the prompt buffer, JS is needed.
+;; prompt buffer
+;; (let ((prompt-buffer (make-instance 'prompt-buffer :window (current-window))))
+;;   (push prompt-buffer (active-prompt-buffers (window prompt-buffer)))
+;;   (prompt-render prompt-buffer)
+;;   (setf (height prompt-buffer) 10))
+
 ;; (wait-on-prompt-buffer (make-instance 'prompt-buffer
 ;;                                       :window (current-window)
 ;;                                       :sources (make-instance 'prompter:source
