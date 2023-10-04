@@ -141,6 +141,8 @@ See `nyxt::attribute-widths'.")
           :opacity 0.6)
         `((:and .button (:or :visited :active))
           :color ,theme:background)
+        `(".button.inactive svg path"
+           :stroke ,theme:secondary-)
         `("#input"
           :height "28px"
           :margin-top "0"
@@ -510,13 +512,17 @@ This does not redraw the whole prompt buffer, use `prompt-render' for that."
                                       "display:none;"
                                       "display:revert")
                            (:nbutton
-                             :text "↓"
-                             :title "Next source"
+                             :class (unless (prompter:adjacent-source prompt-buffer :source source) "inactive")
+                             :text (:raw (gethash "down.svg" *static-data*))
+                             :title (format nil "Next source (~a)" (binding-keys (sym:resolve-symbol :next-source :command)
+                                                                               :modes (modes prompt-buffer)))
                              :buffer prompt-buffer
                              '(funcall (sym:resolve-symbol :next-source :command)))
                            (:nbutton
-                             :text "↑"
-                             :title "Previous source"
+                             :class (unless (prompter:adjacent-source prompt-buffer :steps -1 :source source) "inactive")
+                             :text (:raw (gethash "up.svg" *static-data*))
+                             :title (format nil "Previous source (~a)" (binding-keys (sym:resolve-symbol :previous-source :command)
+                                                                                   :modes (modes prompt-buffer)))
                              :buffer prompt-buffer
                              '(funcall (sym:resolve-symbol :previous-source :command)))
                            (:nbutton
