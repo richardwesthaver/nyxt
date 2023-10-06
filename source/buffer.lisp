@@ -871,9 +871,11 @@ Also see `panel-page'."))
    (glyph-right (gethash "right.svg" *static-data*))
    (glyph-reload (gethash "reload.svg" *static-data*))
    (glyph-lambda (gethash "lambda.svg" *static-data*))
+   ;; TODO Refactor style such that setting the height adjusts to the newly
+   ;; allocated space.
    (style (theme:themed-css (theme *browser*)
             `(body
-              :line-height "24px"
+              :line-height "100vh"
               :font-size "14px"
               :padding 0
               :margin 0)
@@ -905,11 +907,11 @@ Also see `panel-page'."))
             `("#controls"
               :background-color ,theme:secondary
               :color ,theme:on-secondary
+              :line-height "0"
               :padding-left "10px"
               :overflow "hidden"
               :white-space "nowrap"
               :z-index "3"
-              :height "24px"
               :flex-basis "80px")
             `("#controls > button"
               :width "22px"
@@ -936,7 +938,7 @@ Also see `panel-page'."))
             `("#tabs"
               :background-color ,theme:secondary
               :color ,theme:on-secondary
-              :line-height "22px"
+              :line-height "95vh"
               :min-width "100px"
               :white-space "nowrap"
               :overflow-x "scroll"
