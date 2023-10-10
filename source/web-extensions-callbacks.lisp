@@ -37,7 +37,7 @@
       ("height" . ,(ffi-height buffer))
       ("width" . ,(ffi-width buffer))
       ("highlighted" . ,(eq buffer (nyxt::active-buffer (current-window))))
-      ("id" . ,(or (parse-integer (id buffer) :junk-allowed t) 0))
+      ("id" . ,(id buffer))
       ("incognito" . ,(nosave-buffer-p buffer))
       ("lastAccessed" . ,(* 1000 (time:timestamp-to-unix (nyxt::last-access buffer))))
       ("selected" . ,(eq buffer (nyxt::active-buffer (current-window))))
@@ -87,21 +87,18 @@
          (log:debug "Event not injected: ~a" (ps:ps (ps:@ ,object ,event))))))
 
 (defmethod tabs-on-activated ((old-buffer buffer) (new-buffer buffer))
-  (flet ((integer-id (object)
-           (or (ignore-errors (parse-integer (id object)))
-               0)))
-    (dolist (extension (all-extensions))
-      (fire-extension-event
-       extension tabs on-activated
-       (ps:create previous-tab-id (ps:lisp (integer-id old-buffer))
-                  tab-id (ps:lisp (integer-id new-buffer))
-                  window-id (ps:lisp (integer-id (current-window)))))
-      ;; tabs.onActiveChanged is deprecated. No harm in having it, though.
-      (fire-extension-event
-       extension tabs on-active-changed
-       (ps:lisp (integer-id new-buffer))
-       ;; FIXME: Any way to get the window buffer belongs to?
-       (ps:create window-id (ps:lisp (integer-id (current-window))))))))
+  (dolist (extension (all-extensions))
+    (fire-extension-event
+     extension tabs on-activated
+     (ps:create previous-tab-id (ps:lisp (id old-buffer))
+		tab-id (ps:lisp (id new-buffer))
+		window-id (ps:lisp (id (current-window)))))
+    ;; tabs.onActiveChanged is deprecated. No harm in having it, though.
+    (fire-extension-event
+     extension tabs on-active-changed
+     (ps:lisp (id new-buffer))
+     ;; FIXME: Any way to get the window buffer belongs to?
+     (ps:create window-id (ps:lisp (id (current-window)))))))
 
 (defmethod tabs-on-created ((buffer buffer))
   (dolist (extension (all-extensions))
@@ -116,23 +113,20 @@
   (dolist (extension (all-extensions))
     (fire-extension-event
      extension tabs on-updated
-     (ps:lisp (parse-integer (id buffer)))
+     (ps:lisp (id buffer))
      (ps:chain *j-s-o-n (parse (ps:lisp (j:encode properties))))
      ;; buffer->tab-description returns the representation that Parenscript has
      ;; trouble encoding, thus this JSON parsing hack.
      (ps:chain *j-s-o-n (parse (ps:lisp (j:encode (buffer->tab-description (buffer extension)))))))))
 
 (defmethod tabs-on-removed ((buffer buffer))
-  (flet ((integer-id (object)
-           (or (ignore-errors (parse-integer (symbol-name (id object))))
-               0)))
-    (dolist (extension (all-extensions))
-      (fire-extension-event
-       extension tabs on-removed
-       (ps:lisp (integer-id buffer))
-       (ps:create window-id (integer-id (current-window))
-                  ;; FIXME: How do we know if it's closing?
-                  is-window-closing false)))))
+  (dolist (extension (all-extensions))
+    (fire-extension-event
+     extension tabs on-removed
+     (ps:lisp (id buffer))
+     (ps:create window-id (id (current-window))
+		;; FIXME: How do we know if it's closing?
+		is-window-closing false))))
 
 (-> tabs-query ((or null string)) (values string &optional))
 (defun tabs-query (query-object)

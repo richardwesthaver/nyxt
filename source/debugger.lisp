@@ -3,18 +3,11 @@
 
 (in-package :nyxt)
 
-(defvar *debug-conditions* (make-hash-table)
-  "A hash-table from condition ID (as per `new-id') to the `condition-handler' lists.")
-
 (define-class debug-wrapper (ndebug:condition-wrapper)
   ((prompt-text
     "[restart prompt]"
     :type string
     :documentation "The prompt text debugger requires.")
-   (id
-    (new-id)
-    :type integer
-    :documentation "The identifier of the wrapper to find it among other wrappers by.")
    (buffer
     nil
     :type (maybe buffer)
@@ -24,12 +17,10 @@
 See `ndebug:condition-wrapper' for documentation."))
 
 (defmethod ndebug:ui-display ((wrapper debug-wrapper))
-  (setf (gethash (id wrapper) *debug-conditions*) wrapper)
   (setf (buffer wrapper)
         (buffer-load-internal-page-focus 'open-debugger :id (id wrapper))))
 
 (defmethod ndebug:ui-cleanup ((wrapper debug-wrapper))
-  (remhash (id wrapper) *debug-conditions*)
   (buffer-delete (buffer wrapper)))
 
 (defmethod ndebug:query-read ((wrapper debug-wrapper))
@@ -80,7 +71,7 @@ See `ndebug:condition-wrapper' for documentation."))
     ;; TODO: Introduce debug-mode with keys invoking restarts and toggling backtrace.
     (:title "*Debugger*")
   "Open the debugger with the condition indexed by ID."
-  (debug->html (gethash id *debug-conditions*)))
+  (debug->html (id->object id)))
 
 (define-command-global toggle-debug-on-error (&optional (value nil value-provided-p))
   "Toggle Nyxt-native debugging.

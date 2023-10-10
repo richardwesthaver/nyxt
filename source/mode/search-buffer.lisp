@@ -64,11 +64,6 @@ Requires running JavaScript code.")
     '()
     :type (list-of plump:node)
     :documentation "The list of text nodes where the match is found.")
-   (id
-    0
-    :type alex:non-negative-fixnum
-    :documentation "The unique identifier.
-Useful to reference the match via CSS selectors.")
    (identifier-beg
     ""
     :type (maybe string)
@@ -313,7 +308,7 @@ MARK-P accepts the following values:
 - NIL, to disable marking matches;
 - T, to mark all matches;
 - INTEGER, to mark those many matches."
-  (let ((matches) (partial-match) (seen) (idx 0))
+  (let ((matches) (partial-match) (seen))
     (labels
         ((traverse-dfs (node)
            "Traverse NODE depth-first-search and collect search matches."
@@ -333,7 +328,6 @@ MARK-P accepts the following values:
                                          :body text
                                          :buffer buffer
                                          :nodes (list child)
-                                         :id (incf idx)
                                          :identifier-beg id
                                          :node-index-beg index
                                          :text-index-beg (first match)
@@ -371,8 +365,6 @@ MARK-P accepts the following values:
                                         (apply #'concatenate
                                                'string
                                                (mapcar #'plump:text (nodes partial-match)))
-                                        (id partial-match)
-                                        (incf idx)
                                         (identifier-end partial-match)
                                         (nyxt/dom:get-nyxt-id node)
                                         (node-index-end partial-match)

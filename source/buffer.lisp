@@ -32,10 +32,6 @@ The mode instances are stored in the `modes' BUFFER slot.
 
 The default modes returned by this method are appended to the default modes
 inherited from the superclasses.")
-   (id
-    (new-id)
-    :type unsigned-byte
-    :documentation "Unique identifier for a buffer.")
    ;; TODO: Or maybe a dead-buffer should just be a buffer history?
    (profile
     (global-profile)
@@ -589,10 +585,6 @@ only make sense globally should be stored in `browser' instead.
 It's similar to the \"private window\" in popular browser, but the scope here is
 the buffer (which gives us more flexibility)."))
 
-(defmethod print-object ((buffer buffer) stream)
-  (print-unreadable-object (buffer stream :type t :identity t)
-    (format stream "~a" (id buffer))))
-
 (defmethod (setf url) :around (value (buffer document-buffer))
   (declare (ignore value))
   (call-next-method)
@@ -1057,7 +1049,7 @@ PARENT-BUFFER can we used to specify the parent in the history.
 Return the created buffer."
   ;; Background buffers are invisible to the browser.
   (unless (background-buffer-p buffer)
-    (buffers-set (id buffer) buffer))
+    (buffers-add buffer))
   (unless no-history-p
     ;; Register buffer in global history:
     (files:with-file-content (history (history-file buffer)
@@ -1104,7 +1096,6 @@ identifiers."
 
 (-> resurrect-buffer (buffer) (values &optional buffer))
 (defun resurrect-buffer (dead-buffer)
-  ;; (setf (id dead-buffer) (new-id))      ; TODO: Shall we reset the ID?
   (ffi-buffer-make dead-buffer)
   dead-buffer)
 
@@ -1311,20 +1302,16 @@ This is a low-level function.  See `buffer-delete' for the high-level version."
 (export-always 'buffer-list)
 (defun buffer-list ()
   "Order is stable."
-  (sort
-   (alex:hash-table-values (buffers *browser*))
-   #'>
-   ;; TODO: Sort by creation time instead?
-   :key #'id))
+  (sort (alex:hash-table-values (buffers *browser*)) #'> :key #'id))
 
 (defun buffers-get (id)
   "Get the `buffer' with the corresponding ID."
   (gethash id (slot-value *browser* 'buffers)))
 
-(defun buffers-set (id buffer)
-  "Set the BUFFER as the one corresponding to ID in `browser'."
+(defun buffers-add (buffer)
+  "Add the buffer to `buffers' of `browser', indexing by its `id'."
   (when *browser*
-    (setf (gethash id (slot-value *browser* 'buffers)) buffer)
+    (setf (gethash (id buffer) (slot-value *browser* 'buffers)) buffer)
     ;; Force setf call so that slot is seen as changed, e.g. by status buffer watcher.
     (setf (buffers *browser*) (buffers *browser*))))
 

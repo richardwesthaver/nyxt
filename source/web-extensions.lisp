@@ -200,10 +200,6 @@ https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/manifest.
    (manifest nil
              :type (or null string)
              :documentation "Original contents of the manifest.json file.")
-   (id nil
-       :type (or null string)
-       :documentation "A unique ID of the extension.
-Is shared between all the instances of the same extension.")
    (background-buffer nil
                       :export nil
                       :documentation "The buffer to host background page of the extension in.
@@ -339,7 +335,6 @@ If the popup already exists, close it."
           (nyxt::window-delete-panel-buffer (current-window) existing-popup)
           (let ((popup (make-instance 'panel-buffer
                                       :title (default-title (browser-action extension))
-                                      :id (nyxt::new-id)
                                       :default-modes (list extension-class))))
             (setf (popup-buffer extension) popup)
             (nyxt::window-add-panel-buffer
@@ -365,8 +360,6 @@ DIRECTORY should be the one containing manifest.json file for the extension in q
           ;; This :allocation :class is to ensure that the instances of the same
           ;; extension class have the same ID, background-buffer, popup-buffer,
           ;; and storage-path and can communicate properly.
-          (id (or (symbol-name (gensym ,name)))
-              :allocation :class)
           (background-buffer nil
                              :export nil
                              :allocation :class)
@@ -395,6 +388,7 @@ DIRECTORY should be the one containing manifest.json file for the extension in q
 
 (define-internal-scheme "web-extension"
     (lambda (url buffer)
+      (declare (ignorable buffer))
       (let ((data "<h1>Resource not found</h1>")
             (type "text/html;charset=utf8"))
         (with-protect ("Error while processing the web-extension keyscheme: ~a" :condition)
@@ -403,9 +397,9 @@ DIRECTORY should be the one containing manifest.json file for the extension in q
                           (parts (str:split "/" path :limit 2))
                           (extension-id (first parts))
                           (inner-path (second parts))
-                          (extension (find extension-id (sera:filter #'extension-p (modes buffer))
+                          (extension (find extension-id (sera:filter #'extension-p (alexandria:mappend #'modes (nyxt:buffer-list)))
                                            :key #'id
-                                           :test #'string-equal))
+                                           :test #'equal))
                           (full-path (merge-extension-path extension inner-path)))
             (setf data (alex:read-file-into-byte-vector full-path)
                   type (mimes:mime full-path))))

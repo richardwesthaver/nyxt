@@ -121,7 +121,7 @@ Augment this with `style' of STATUS, if necessary."
                                  (str:concat " — " (title buffer)))
                                (when (find (url buffer) (remove buffer (buffer-list))
                                            :test #'url-equal :key #'url)
-                                 (format nil " (buffer ~a)" (id buffer)))))))
+                                 (format nil " (buffer ~d)" (id buffer)))))))
      (spinneret:with-html-string
        (:nbutton
          :buffer status

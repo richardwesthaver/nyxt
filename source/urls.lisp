@@ -464,12 +464,12 @@ guarantee of the same result."
   :secure-p t)
 
 (-> lisp-url (&rest t &key
-                    (:id string)
+                    (:id integer)
                     (:buffer t) ;; `document-buffer', actually.
                     (:title (maybe string))
                     (:callback (or function symbol)))
     string)
-(defun lisp-url (&key title (id (princ-to-string (nyxt:new-id))) (buffer (current-buffer))
+(defun lisp-url (&key title id (buffer (current-buffer))
                    (callback (unless (gethash id (nyxt::lisp-url-callbacks buffer))
                                (alex:required-argument 'callback))))
   (unless buffer
@@ -477,11 +477,11 @@ guarantee of the same result."
   (sera:synchronized ((nyxt::lisp-url-callbacks buffer))
     (unless (gethash id (nyxt::lisp-url-callbacks buffer))
       (log:debug "Registering callback ~a for buffer ~a" id buffer)
-      (setf (gethash id (nyxt::lisp-url-callbacks buffer)) callback)))
+      (setf (gethash (id callback) (nyxt::lisp-url-callbacks buffer))
+	    callback)))
   (format nil "lisp://~a?~:[~*~;title=~a&~]" id
           title (when title
                   (quri:url-encode title))))
-
 
 (ps:defpsmacro nyxt/ps::lisp-call (id &key title (buffer '(current-buffer)) args)
   "Call the ID-bound function on the Lisp side.
@@ -519,7 +519,7 @@ Example:
    (nyxt:current-buffer)
    (ps:ps (nyxt/ps:lisp-call hello :buffer (nyxt:current-buffer) :args '(:name \"Stranger\"))))))"
   (alex:with-gensyms (id)
-    `(let* ((,id (princ-to-string (new-id)))
+    `(let* ((,id (princ-to-string (string (gensym))))
             (,name (progn
                      (lisp-url :id ,id
                                :buffer ,buffer
@@ -550,26 +550,25 @@ BUFFER must be a `document-buffer'.
 The ARGS are used as a keyword arglist for the CALLBACK."
   ;; We define it here and not in parenscript-macro because we need
   ;; `nyxt::lisp-url-callbacks' while parenscript-macro is Nyxt-independent.
-  `(let ((promise (nyxt/ps:lisp-call
-                   (ps:lisp
-                    ;; FIXME: We define a URL, but don't use it anywhere, we only use its
-                    ;; ID. Quirky idiom. Maybe somehow only define an ID without string
-                    ;; generation?
-                    (sera:lret ((id (princ-to-string (nyxt:new-id))))
-                      (lisp-url
-                       :id id
-                       :buffer ,buffer
-                       :callback ,(if (and (sera:single body)
-                                           (member (first (first body)) '(lambda function)))
-                                      (first body)
-                                      `(lambda () ,@body)))))
-                   :buffer ,buffer :title ,title ,@args)))
-     ,@(when callback
-         `((ps:chain promise
-                     (then (lambda (response)
-                             (when (@ response ok)
-                               (chain response (json)))))
-                     (then ,callback))))))
+  (alex:with-gensyms (thunk)
+    `(let ((promise (nyxt/ps:lisp-call
+		     (ps:lisp
+		      ;; FIXME: We define a URL, but don't use it anywhere, we only use its
+		      ;; ID. Quirky idiom. Maybe somehow only define an ID without string
+		      ;; generation?
+		      (let ((,thunk ,(if (and (sera:single body)
+					      (member (first (first body)) '(lambda function)))
+					 (first body)
+					 `(lambda () ,@body))))
+			(lisp-url :buffer ,buffer :callback ,thunk)
+			(id ,thunk)))
+		     :buffer ,buffer :title ,title ,@args)))
+       ,@(when callback
+	   `((ps:chain promise
+		       (then (lambda (response)
+			       (when (@ response ok)
+				 (chain response (json)))))
+		       (then ,callback)))))))
 (export-always 'nyxt/ps::lisp-eval :nyxt/ps)
 
 (define-internal-scheme "lisp"
@@ -580,7 +579,7 @@ The ARGS are used as a keyword arglist for the CALLBACK."
                 (panel-buffer-p buffer)
                 (prompt-buffer-p buffer)
                 (internal-url-p (url buffer)))
-            (let* ((request-id (quri:uri-host url))
+            (let* ((request-id (parse-integer (quri:uri-host url)))
                    (params (and url (quri:uri-query-params url)))
                    (title (when params
                             (alex:assoc-value params "title")))

@@ -3,9 +3,9 @@
 
 (in-package :nyxt)
 
-(defvar *inspected-values*
+(defvar *id->object*
   (tg:make-weak-hash-table :test 'equal :weakness :value)
-  "All the values Nyxt inspected (with `describe-value', for example).")
+  "All the values Nyxt interacted with (via `id'), indexed by their integer ID.")
 
 (export-always 'sequence-p)
 (defun sequence-p (object)
@@ -22,26 +22,25 @@
 - non-complex number."
   (typep object '(or symbol character string real)))
 
-(export-always 'inspected-value)
-(define-generic inspected-value (id)
-  "Get the inspected value corresponding to ID."
-  (gethash id *inspected-values*))
+(export-always 'id)
+(define-generic id (object)
+  "Get ID for OBJECT, caching it in the process."
+  (sera:lret ((impl-id
+	       #+sbcl (sb-kernel:get-lisp-obj-address object)
+	       #+clozure (ccl:%address-of object)
+	       #+ecl (si:pointer object)
+	       #+abcl (system::identity-hash-code object)
+	       #+clisp (system::address-of object)
+	       #+gcl (system:address object)
+	       #+allegro (excl:lispval-to-address object)
+	       #-(or sbcl clozure ecl abcl clisp gcl allegro) (sxhash object)))
+    (setf (gethash impl-id *id->object*)
+	  object)))
 
-(define-generic (setf inspected-value) (new-value id)
-  "Set the ID-indexed inspected value."
-  (setf (gethash id *inspected-values*) new-value))
-
-(defun ensure-inspected-id (value)
-  "In case VALUE was already inspected, return its ID.
-If it wasn't, add it to inspected values and return its new ID."
-  (maphash
-   (lambda (id object)
-     (when (equal value object)
-       (return-from ensure-inspected-id id)))
-   *inspected-values*)
-  (sera:lret ((id (new-id)))
-    (setf (inspected-value id) value)))
-
+(export-always 'id->object)
+(define-generic id->object (id)
+  "Get object by ID, if it was previously cached in `id'."
+  (gethash id *id->object*))
 
 (export-always '*inspector-print-length*)
 (defvar *inspector-print-length* 20
@@ -64,7 +63,7 @@ In case it's `scalar-p', simply print it."
       (spinneret:with-html-string
         (:raw (escaped-literal-print object)))
       (spinneret:with-html-string
-        (:a :href (nyxt-url 'describe-value :id (ensure-inspected-id object))
+        (:a :href (nyxt-url 'describe-value :id (id object))
             (:raw (escaped-literal-print object))))))
 
 (defun compact-listing (sequence &key table-p)

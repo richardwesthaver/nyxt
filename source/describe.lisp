@@ -277,11 +277,10 @@ Otherwise prompt for matches."
         :sources sources)))))
 
 (define-internal-page describe-value
-    (&key id)
+    (&key (id (alex:required-argument 'id)))
     (:title "*Help-value*" :page-mode 'nyxt/mode/help:help-mode)
   "Inspect value under ID and show it in a help buffer."
-  (sera:and-let* ((id id)
-                  (value (inspected-value id)))
+  (sera:and-let* ((value (id->object id)))
     (spinneret:with-html-string
       (:h1 (:raw (escaped-literal-print value)))
       (:dl

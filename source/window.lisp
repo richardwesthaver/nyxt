@@ -14,11 +14,7 @@
 Should be redefined by the renderer."))
 
 (define-class window (renderer-window)
-  ((id
-    (new-id)
-    :type unsigned-byte
-    :documentation "Unique identifier for a window.")
-   (titler
+  ((titler
     'window-default-title
     :type (or function sym:function-symbol)
     :documentation "Return the title of the window.
@@ -120,7 +116,6 @@ The handlers take the window as argument."))
   (setf (window (status-buffer window)) window)
   (setf (window (message-buffer window)) window)
   (when browser
-    (setf (id window) (new-id))
     (setf (slot-value browser 'last-active-window) window))
   window)
 
@@ -129,10 +124,6 @@ The handlers take the window as argument."))
       (slot-value window 'prompt-buffer-open-height)
       (setf (slot-value window 'prompt-buffer-open-height)
             (round (/ (ffi-height window) 3)))))
-
-(defmethod print-object ((window window) stream)
-  (print-unreadable-object (window stream :type t :identity t)
-    (format stream "~a" (id window))))
 
 (defmethod window-add-panel-buffer ((window window) (buffer panel-buffer) side)
   "Add a panel buffer to a window. Side can either be :right or :left."

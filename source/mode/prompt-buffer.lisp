@@ -585,7 +585,7 @@ Only available if `prompter:enable-marks-p' is non-nil."
                                                         (keyword (:nxref :function (sym:resolve-symbol binding :function)))
                                                         (t (:a :href (nyxt-url
                                                                       'describe-value
-                                                                      :id (nyxt::ensure-inspected-id binding))
+                                                                      :id (id binding))
                                                                binding))))))))
              else
                collect (:dd "No binding")))

@@ -141,7 +141,7 @@ See `current-window' for the user-facing function.")
    (buffers
     :initform (make-hash-table)
     :documentation "Table of all live buffers, indexed by their `id'.
-See `buffer-list', `buffers-get', `buffers-set' and `buffers-delete'.")
+See `buffer-list', `buffers-get', `buffers-add' and `buffers-delete'.")
    (startup-error-reporter-function
     nil
     :type (or function null)

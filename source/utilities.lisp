@@ -24,11 +24,6 @@ Useful for functions operating on strings, like `str:concat'.")
   :documentation "String containing ASCII escape (#x1B) char.
 Useful when concatenating escaped strings, like in nyxt: URLs.")
 
-(export-always 'new-id)
-(defun new-id ()
-  "Generate a new unique numeric ID."
-  (parse-integer (symbol-name (gensym ""))))
-
 (export-always 'defmemo)
 (defmacro defmemo (name params &body body) ; TODO: Replace with https://github.com/AccelerationNet/function-cache?
   "Define a new memoized function named NAME in the global environment.

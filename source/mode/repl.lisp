@@ -25,10 +25,6 @@ Features:
     "Cell"
     :type string
     :documentation "The name of the cell type.")
-   (id
-    (nyxt::new-id)
-    :type alex:non-negative-integer
-    :documentation "Unique evaluation identifier.")
    (mode-instance
     ;; If we use (find-submode 'repl-mode), compiler will scream at us that
     ;; 'repl-mode is not a mode symbol, because repl-mode is not yet defined.
