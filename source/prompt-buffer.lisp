@@ -164,7 +164,11 @@ See `nyxt::attribute-widths'.")
         `(".source-name"
           :background-color ,theme:secondary
           :color ,theme:on-secondary
+          :display "flex"
+          :justify-content "space-between"
+          :align-items "center"
           :padding-left "5px"
+          :padding-right "5px"
           :line-height "24px"
           :border-radius "3px 0 0 0")
         `("#suggestions"
@@ -507,39 +511,41 @@ This does not redraw the whole prompt buffer, use `prompt-render' for that."
              (spinneret:with-html-string
                (:div :class "source"
                      (:div :class "source-name"
-                           :style (if (and (hide-single-source-header-p prompt-buffer)
-                                           (sera:single sources))
-                                      "display:none;"
-                                      "display:revert")
-                           (:nbutton
-                             :class (unless (prompter:adjacent-source prompt-buffer :source source) "inactive")
-                             :text (:raw (gethash "down.svg" *static-data*))
-                             :title (format nil "Next source (~a)" (binding-keys (sym:resolve-symbol :next-source :command)
-                                                                               :modes (modes prompt-buffer)))
-                             :buffer prompt-buffer
-                             '(funcall (sym:resolve-symbol :next-source :command)))
-                           (:nbutton
-                             :class (unless (prompter:adjacent-source prompt-buffer :steps -1 :source source) "inactive")
-                             :text (:raw (gethash "up.svg" *static-data*))
-                             :title (format nil "Previous source (~a)" (binding-keys (sym:resolve-symbol :previous-source :command)
-                                                                                   :modes (modes prompt-buffer)))
-                             :buffer prompt-buffer
-                             '(funcall (sym:resolve-symbol :previous-source :command)))
-                           (:nbutton
-                             :text "⚙"
-                             :title "Toggle attributes display"
-                             :buffer prompt-buffer
-                             '(funcall (sym:resolve-symbol :toggle-attributes-display :command)))
-                           (prompter:name source)
-                           (if (prompter:hide-suggestion-count-p source)
-                               ""
-                               (suggestion-and-mark-count prompt-buffer
-                                                          (prompter:suggestions source)
-                                                          (prompter:marks source)
-                                                          :enable-marks-p (prompter:enable-marks-p source)))
-                           (if (prompter:ready-p source)
-                               ""
-                               "(In progress...)"))
+                           :style (when (and (hide-single-source-header-p prompt-buffer)
+                                             (sera:single sources))
+                                    "display:none")
+                          (:div.inner
+                            (:nbutton
+                              :class (unless (prompter:adjacent-source prompt-buffer :source source) "inactive")
+                              :text (:raw (gethash "down-arrow.svg" *static-data*))
+                              :title (format nil "Next source (~a)" (binding-keys (sym:resolve-symbol :next-source :command)
+                                                                                  :modes (modes prompt-buffer)))
+                              :buffer prompt-buffer
+                              '(funcall (sym:resolve-symbol :next-source :command)))
+                            (:nbutton
+                              :class (unless (prompter:adjacent-source prompt-buffer :steps -1 :source source) "inactive")
+                              :text (:raw (gethash "up-arrow.svg" *static-data*))
+                              :title (format nil "Previous source (~a)" (binding-keys (sym:resolve-symbol :previous-source :command)
+                                                                                      :modes (modes prompt-buffer)))
+                              :buffer prompt-buffer
+                              '(funcall (sym:resolve-symbol :previous-source :command)))
+                            (prompter:name source)
+                            (if (prompter:hide-suggestion-count-p source)
+                                ""
+                                (suggestion-and-mark-count prompt-buffer
+                                                           (prompter:suggestions source)
+                                                           (prompter:marks source)
+                                                           :enable-marks-p (prompter:enable-marks-p source)))
+                            (if (prompter:ready-p source)
+                                ""
+                                "(In progress...)"))
+                           (:div.inner
+                            (:nbutton
+                              :text (:raw (gethash "plus-minus.svg" *static-data*))
+                              :title (format nil "Toggle attributes display (~a)" (binding-keys (sym:resolve-symbol 'toggle-attributes-display :command)
+                                                                                                :modes (modes prompt-buffer)))
+                              :buffer prompt-buffer
+                              '(funcall (sym:resolve-symbol :toggle-attributes-display :command)))))
                      (:raw (render-attributes source prompt-buffer))))))
       (ps-eval :buffer prompt-buffer
         (setf (ps:@ (nyxt/ps:qs document "#suggestions") |innerHTML|)
