@@ -161,16 +161,23 @@ See `nyxt::attribute-widths'.")
         `(".source"
           :margin-left "10px"
           :margin-top "15px")
-        `(".source-name"
+        `(".source-heading"
           :background-color ,theme:secondary
           :color ,theme:on-secondary
           :display "flex"
           :justify-content "space-between"
-          :align-items "center"
-          :padding-left "5px"
-          :padding-right "5px"
+          :align-items "stretch"
           :line-height "24px"
           :border-radius "3px 0 0 0")
+        `(".source-heading > div"
+          :display "flex"
+          :justify-content "space-between"
+          :align-items "center")
+        `(".source-heading > div > button"
+          :padding "0 6px 0 6px"
+          :min-height "100%")
+        `(".source-heading > div > button:hover"
+          :background-color ,theme:secondary+)
         `("#suggestions"
           :background-color ,theme:background
           :color ,theme:on-background
@@ -509,12 +516,12 @@ This does not redraw the whole prompt buffer, use `prompt-render' for that."
          (last-source-index (1- (length sources))))
     (flet ((source->html (source)
              (spinneret:with-html-string
-               (:div :class "source"
-                     (:div :class "source-name"
+               (:div.source
+                     (:div.source-heading
                            :style (when (and (hide-single-source-header-p prompt-buffer)
                                              (sera:single sources))
                                     "display:none")
-                          (:div.inner
+                          (:div
                             (:nbutton
                               :class (unless (prompter:adjacent-source prompt-buffer :source source) "inactive")
                               :text (:raw (gethash "down-arrow.svg" *static-data*))
@@ -539,7 +546,7 @@ This does not redraw the whole prompt buffer, use `prompt-render' for that."
                             (if (prompter:ready-p source)
                                 ""
                                 "(In progress...)"))
-                           (:div.inner
+                           (:div
                             (:nbutton
                               :text (:raw (gethash "plus-minus.svg" *static-data*))
                               :title (format nil "Toggle attributes display (~a)" (binding-keys (sym:resolve-symbol 'toggle-attributes-display :command)
